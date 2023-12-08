@@ -1,7 +1,7 @@
 import streamlit as st
 import os
-from modules.utility import *
 from msal_streamlit_authentication import msal_authentication
+from .modules.utility import Utility
 
 #################################################################################
 ################################# Vars ##########################################
@@ -27,6 +27,12 @@ if "scriptname" not in st.session_state:
 if "generated" not in st.session_state:
     st.session_state.generated = False
 
+util = Utility(
+    azure_openai_key=st.secrets["AZURE_OPENAI_KEY"]
+    ,azure_openai_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+    ,azure_openai_deployment=st.secrets["AZURE_OPENAI_CHATGPT_DEPLOYMENT"]
+    ,graph_auth_header=st.secrets["GRAPH_HEADER"]
+)
 #################################################################################
 ################################# Page ##########################################
 #################################################################################
@@ -67,6 +73,6 @@ with tab2:
 
 
 
-print(st.secrets["AZURE_OPENAI_KEY"])
+print()
 
 login_token = None
