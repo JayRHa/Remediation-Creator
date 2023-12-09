@@ -1,8 +1,8 @@
-""""""
+""" """
 import streamlit as st
-import openai
+import json
 import requests
-
+import base64
 
 DETECTION_SCRIPT_PROMPT = """
 [MUST] Create a PowerShell script for Microsoft Intune that detects a specific issue on Windows devices.
@@ -10,6 +10,7 @@ DETECTION_SCRIPT_PROMPT = """
 [MUST] Utilize the provided sample or template script as a basis, modifying it according to your specific detection needs.
 [MUST] Ensure the script returns an Exit Code 0 if the issue is not detected, and Exit Code 1 if the issue is detected.
 [MUST] The output must be in JSON format, following this example: {"ExitCode": 0, "Message": "No issue detected"}.
+[MUST] Never change something on the system only detect!
 """
 
 
@@ -23,15 +24,18 @@ REMEDIATION_SCRIPT_PROMPT = """
 [MUST] Include comprehensive error handling and documentation within the script for ease of understanding and maintenance.
  """
 
+BASE_URL = "https://graph.microsoft.com/beta/"
 
 class Utility:
-    def __init__(self, azure_openai_key, azure_openai_endpoint, azure_openai_deployment, graph_auth_header):
+    def __init__(self, azure_openai_key:str, azure_openai_endpoint:str, azure_openai_deployment:str, graph_auth_header:str):
+        """ Init Utility calls """
         self.azure_openai_key = azure_openai_key
         self.azure_openai_endpoint = azure_openai_endpoint
         self.azure_openai_deployment = azure_openai_deployment
         self.graph_auth_header = graph_auth_header
     
-    def invoke_gpt_call(self,user,system=None,history=None):
+    def invoke_gpt_call(self,user:str,system:str=None,history:str=None):
+        """ Invoke the Azure OpenAI API"""
         headers = {
             "Content-Type": "application/json",
             "api-key": self.azure_openai_key
@@ -66,44 +70,91 @@ class Utility:
         except Exception as e:
             print(f"Error while executing a call to {self.azure_openai_endpoint}: {e}")
             return None
+        
+
+    def run_graph(self, endpoint:str, body:dict):
+        """ Run a graph call"""
+        uri = BASE_URL + endpoint
+        try:
+            response = requests.post(uri, headers=self.graph_auth_header, json=body)
+        except Exception as e:
+            raise(f"Error while executing a call to {uri}: {e}")
+        response.raise_for_status()
             
-    def __generate_remediations__(self,question:str):
+    def __generate_remediations__(self,description:str, detection_script:str):
         prompt = f"""
-        You have to develope two sctipts. One remediation and one detection script. You have to follwo the following rules:
+Create a endpoint analytics remediation script which fits to the detection script based on the following description:
+{description}
 
-        #Detection Script
-        {DETECTION_SCRIPT_PROMPT}
+# Detection script
+{detection_script}
 
-        #Remediation Script
-        {REMEDIATION_SCRIPT_PROMPT}
+The output MUST only be an valid Powershell script without description or text
+"""
 
-        # This is te purpose of the script:
-        {question}
+        st.session_state.remediation_script = self.invoke_gpt_call(
+            user=prompt
+            ,system=REMEDIATION_SCRIPT_PROMPT
+            ,history=None
+        )
+        return st.session_state.remediation_script
 
-        # Output
-        The output MUST be an valid JSON object with the following structure:
+    def __generate_detection__(self, description:str):
+        prompt = f"""
+Create a endpoint analytics detection script based on the following description:
+{description}
 
-        """ + '{"detectionScript" : "VALID POWERSHELL CODE", "remediationScript" : "VALID POWERSHELL CODE"}'
+The output MUST only be an valid Powershell script without description or text
+"""
 
+        st.session_state.detection_script = self.invoke_gpt_call(
+            user=prompt
+            ,system=DETECTION_SCRIPT_PROMPT
+            ,history=None
+        )
+        return st.session_state.detection_script
 
-        pass
-    def __generate_detection__(self):
-        pass
-
-    def clear():
-        st.session_state.description = ""
-        st.session_state.scriptname = "WIN-NAMEOFYOURSCRIPT"
-        st.session_state.generated = False
-
-    def generate(self):
-        if st.session_state.description == "":
-            st.error("Please enter a description")
-            return
+    def upload(self, scope:str="System") -> None:
         if st.session_state.scriptname == "" or st.session_state.scriptname == "WIN-NAMEOFYOURSCRIPT":
             st.error("Please enter a scriptname or change the default value")
             return
-        
-        if st.session_state.selected == "Detection only":
-            self.__generate_detection__()
+            
+        if st.session_state.detection_script == "":
+            st.error("Please generate the detection script")
+            return
         else:
-            self.__generate_remediations__()
+            # Encode and then decode to convert bytes to string
+            base64_det_script = base64.b64encode(st.session_state.detection_script.encode("utf-8")).decode('utf-8')
+
+        base64_rem_script = ""
+        if st.session_state.remediation_script != "":
+            # Encode and then decode to convert bytes to string
+            base64_rem_script = base64.b64encode(st.session_state.remediation_script.encode("utf-8")).decode('utf-8')
+
+        body = {
+            "displayName": st.session_state.scriptname,
+            "description": st.session_state.description,
+            "publisher": "GPT Remediation Creator",
+            "runAs32Bit": True,
+            "runAsAccount": scope,  # Ensure 'scope' is defined earlier in your code
+            "enforceSignatureCheck": False,
+            "detectionScriptContent": base64_det_script,
+            "remediationScriptContent": base64_rem_script,
+            "roleScopeTagIds": ["0"]
+        }
+
+        # Convert to json
+        #body = json.dumps(body)
+
+        endpoint = "deviceManagement/deviceHealthScripts"
+        self.run_graph(endpoint=endpoint, body=body)
+
+
+    def generate(self) -> None:
+        """ Generate the scripts"""
+        if st.session_state.description == "":
+            st.error("Please enter a description")
+            return
+        self.__generate_detection__(description = st.session_state.description)
+        if st.session_state.selected == "Detection and Remediation":
+            self.__generate_remediations__(description = st.session_state.description, detection_script = st.session_state.detection_script)
