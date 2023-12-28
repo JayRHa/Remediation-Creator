@@ -48,3 +48,6 @@ If you have a ideas for improvements or for missing features as well as bugs, co
 
 ## Disclosure
 This is a community repository. There is no guarantee for this. Please check thoroughly before running the scripts.
+
+## License
+The tool is completely free and open-usource and licensed nder the Apache 2.0 license. It build based on the [streamlit](https://github.com/streamlit/streamlit) package
