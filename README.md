@@ -1,6 +1,9 @@
 # Remediation Script Creator
 - Find more informations in my blog post on [jannikreinhard.com](jannikreinhard.com)
 
+
+![Alt text](https://github.com/JayRHa/Remediation-Creator/blob/main/.pictures/tool.png)
+
 ## Intro
 Remediations play a pivotal role in effective client management, allowing organizations to proactively identify and resolve end-user issues. Additionally, they serve as a valuable tool for enforcing specific settings or configurations that may not be natively supported in Microsoft Intune. However, the process of crafting these scripts can often be intricate and time-consuming.
 
