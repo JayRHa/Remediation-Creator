@@ -1,8 +1,7 @@
 import streamlit as st
-import os
-from msal_streamlit_authentication import msal_authentication
+#from msal_streamlit_authentication import msal_authentication
 from modules.utility import Utility
-from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
+from azure.identity import InteractiveBrowserCredential
 
 #################################################################################
 ################################# Vars ##########################################
@@ -10,16 +9,13 @@ from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
 st.set_page_config(page_title="GPT Remediation Creator", page_icon ="chart_with_upwards_trend", layout = 'wide')
 
 if "login_token" not in st.session_state:
-    st.session_state.login_token = InteractiveBrowserCredential().get_token("https://graph.microsoft.com/.default")
-if "graph_auth_header" not in st.session_state:
-    st.session_state.graph_auth_header = {}
+    st.session_state.login_token = InteractiveBrowserCredential(client_id=st.secrets["APP_REGISTRATION_ID"]).get_token(".default")
 if "question" not in st.session_state:
     st.session_state.question = ""
 if "selections" not in st.session_state:
     st.session_state.selections = ["Detection only", "Detection and Remediation"]
 if "selected" not in st.session_state:
     st.session_state.selected = "Detection and Remediation"
-
 if "description" not in st.session_state:
     st.session_state.description = ""
 if "scriptname" not in st.session_state:
@@ -36,44 +32,24 @@ if "selections_scope" not in st.session_state:
 if "scope" not in st.session_state:
     st.session_state.scope = "System"
 
-# Get graph token (Only needed if the website is deplyed)
-# if debug
+
 def get_graph_header(token):
     return {
         'Content-Type': 'application/json',
         'Authorization': f"Bearer {token}"
     }
+if "graph_auth_header" not in st.session_state:
+    st.session_state.graph_auth_header = get_graph_header(st.session_state.login_token.token)
 
 
-# clinet_id = st.secrets["AZURE_CLIENT_ID"]
-# tenant_id = st.secrets["AZURE_TENANT_ID"]
-# redirect_uri = st.secrets["AZURE_REDIRECT_URI"]
-# st.session_state.login_token = msal_authentication(
-# auth={
-#     "clientId": f"{clinet_id}",
-#     "authority": f"https://login.microsoftonline.com/{tenant_id}",
-#     "redirectUri": f"{redirect_uri}",
-#     "postLogoutRedirectUri": "/"
-# },
-# cache={
-#     "cacheLocation": "sessionStorage",
-#     "storeAuthStateInCookie": False
-# },
-# logout_request={},
-# login_button_text="Login",
-# logout_button_text="Logout",
-# html_id="html_id_for_button",
-# key=1
-# )
-st.session_state.graph_auth_header = get_graph_header(st.session_state.login_token.token)
 print(st.session_state.graph_auth_header)
-
-utility = Utility(
-    azure_openai_key=st.secrets["AZURE_OPENAI_KEY"]
-    ,azure_openai_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
-    ,azure_openai_deployment=st.secrets["AZURE_OPENAI_CHATGPT_DEPLOYMENT"]
-    ,graph_auth_header=st.session_state.graph_auth_header
-)
+if "utility" not in st.session_state:
+    st.session_state.utility = Utility(
+        azure_openai_key=st.secrets["AZURE_OPENAI_KEY"]
+        ,azure_openai_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+        ,azure_openai_deployment=st.secrets["AZURE_OPENAI_CHATGPT_DEPLOYMENT"]
+        ,graph_auth_header=st.session_state.graph_auth_header
+    )
 #################################################################################
 ################################# Page ##########################################
 #################################################################################
@@ -102,7 +78,7 @@ with tab1:
     if col1.button("Generate"):
         try: 
             with st.spinner('Script will be generated...'):
-                utility.generate()
+                st.session_state.utility.generate()
                 st.session_state.generated = True
             st.success('Script is generated. Change to the results tab!')
         except Exception as e:
@@ -126,7 +102,10 @@ with tab2:
 
     if st.session_state.generated  == True:
         if st.button("Upload"):
-            utility.upload(
+            if st.session_state.utility.upload(
                 scope=st.session_state.scope
-            )
-            print("Upload")
+            ):
+                st.success('Script successful uploaded. https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/remediations!')
+            else:
+                st.error('Error while uploading the script. Please check the logs!')
+            

@@ -9,8 +9,10 @@ DETECTION_SCRIPT_PROMPT = """
 [MUST] The script should only detect the issue without changing, fixing, or remediating it.
 [MUST] Utilize the provided sample or template script as a basis, modifying it according to your specific detection needs.
 [MUST] Ensure the script returns an Exit Code 0 if the issue is not detected, and Exit Code 1 if the issue is detected.
-[MUST] The output must be in JSON format, following this example: {"ExitCode": 0, "Message": "No issue detected"}.
 [MUST] Never change something on the system only detect!
+[MUST] The output must be like following this example: 
+Write-Host "No issue detected"
+exit 0 # or exit 1
 """
 
 
@@ -19,9 +21,11 @@ REMEDIATION_SCRIPT_PROMPT = """
 [MUST] This script should perform actions to remediate the detected issue, based on the detection script's findings.
 [MUST] Customize the script to target the specific remediation actions required for your scenario.
 [MUST] Ensure the script returns appropriate Exit Codes based on the success or failure of the remediation process.
-[MUST] Provide clear output in JSON format, indicating the status of the remediation, e.g., {"ExitCode": 0, "Message": "Issue remediated successfully"}.
 [MUST] The script must be adaptable based on user inputs or script parameters to handle different remediation scenarios.
 [MUST] Include comprehensive error handling and documentation within the script for ease of understanding and maintenance.
+[MUST] The output must be like following this example: 
+Write-Host "Issue remediated successfully"
+exit 0 # or exit 1
  """
 
 BASE_URL = "https://graph.microsoft.com/beta/"
@@ -75,6 +79,7 @@ class Utility:
     def run_graph(self, endpoint:str, body:dict):
         """ Run a graph call"""
         uri = BASE_URL + endpoint
+        print(body)
         try:
             response = requests.post(uri, headers=self.graph_auth_header, json=body)
         except Exception as e:
@@ -117,11 +122,11 @@ The output MUST only be an valid Powershell script without description or text
     def upload(self, scope:str="System") -> None:
         if st.session_state.scriptname == "" or st.session_state.scriptname == "WIN-NAMEOFYOURSCRIPT":
             st.error("Please enter a scriptname or change the default value")
-            return
+            return False
             
         if st.session_state.detection_script == "":
             st.error("Please generate the detection script")
-            return
+            return  False
         else:
             # Encode and then decode to convert bytes to string
             base64_det_script = base64.b64encode(st.session_state.detection_script.encode("utf-8")).decode('utf-8')
@@ -148,6 +153,7 @@ The output MUST only be an valid Powershell script without description or text
 
         endpoint = "deviceManagement/deviceHealthScripts"
         self.run_graph(endpoint=endpoint, body=body)
+        return True
 
 
     def generate(self) -> None:
