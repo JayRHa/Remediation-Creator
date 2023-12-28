@@ -32,6 +32,7 @@ In the end, the process is remarkably straightforward. The tool generates a dete
 
 
 ## Prerequisites
+- Python installed on the system
 - GPT enabled Subscription (https://aka.ms/oai/access)
 
 ## Post steps
