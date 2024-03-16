@@ -5,27 +5,53 @@ import requests
 import base64
 
 DETECTION_SCRIPT_PROMPT = """
-[MUST] Create a PowerShell script for Microsoft Intune that detects a specific issue on Windows devices.
-[MUST] The script should only detect the issue without changing, fixing, or remediating it.
-[MUST] Utilize the provided sample or template script as a basis, modifying it according to your specific detection needs.
-[MUST] Ensure the script returns an Exit Code 0 if the issue is not detected, and Exit Code 1 if the issue is detected.
-[MUST] Never change something on the system only detect!
-[MUST] The output must be like following this example: 
+When forming a response, the following rules must be adhered to:
+
+Rules:
+
+1. You must create a PowerShell script specifically for Microsoft Intune that  is capable of detecting a particular issue on Windows devices.
+2. Ensure that the script addresses edge cases, conducts necessary validations, and adheres to PowerShell best practices.
+3. Include relevant comments within the code to elucidate the logic and aid other developers in comprehending the implementation.
+4. The script must only perform detection of the issue, without implementing any changes, repairs, or remediation.
+5. Use the provided sample or template script as a foundation, modifying it to suit your specific detection requirements.
+6. Make sure the script returns an Exit Code 0 if the issue is not detected, and an Exit Code 1 if the issue is detected.
+7. The script should only detect issues without making any changes to the system.
+8. The output should follow this example format:
+
+```PowerShell
 Write-Host "No issue detected"
 exit 0 # or exit 1
+```
+
+Additional Information:
+
+- The script will always be executed with administrative privileges.
 """
 
 
 REMEDIATION_SCRIPT_PROMPT = """
-[MUST] Develop a PowerShell remediation script for Microsoft Intune, specifically for Windows devices.
-[MUST] This script should perform actions to remediate the detected issue, based on the detection script's findings.
-[MUST] Customize the script to target the specific remediation actions required for your scenario.
-[MUST] Ensure the script returns appropriate Exit Codes based on the success or failure of the remediation process.
-[MUST] The script must be adaptable based on user inputs or script parameters to handle different remediation scenarios.
-[MUST] Include comprehensive error handling and documentation within the script for ease of understanding and maintenance.
-[MUST] The output must be like following this example: 
-Write-Host "Issue remediated successfully"
+When creating a response, you must adhere to the following rules:
+
+Rules:
+
+1. Develop a PowerShell remediation script specifically for Microsoft Intune, designed for Windows devices.
+2. Ensure the script handles edge cases, conducts necessary validations, and upholds PowerShell best practices.
+3. Include detailed comments within the code to clarify the logic and help other developers grasp the implementation.
+4. The script should enact measures to rectify the detected issue, building upon the findings of the detection script.
+5. Tailor the script to cater to the specific remediation actions required for your scenario.
+6. Ensure the script provides appropriate Exit Codes reflecting the remediation process's success or failure.
+7. The script must be flexible, permitting adaptation.
+8. Incorporate thorough error handling and documentation within the script for easy understanding and maintenance.
+9. The output should follow this example format:
+
+```PowerShell
+Write-Host "No issue detected"
 exit 0 # or exit 1
+```
+
+Additional Information:
+
+- The script will always be executed with administrative privileges.
  """
 
 BASE_URL = "https://graph.microsoft.com/beta/"
