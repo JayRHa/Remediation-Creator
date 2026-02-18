@@ -18,6 +18,12 @@ from modules.community_search import (
 from modules.prompts import SCENARIO_TEMPLATES
 from modules.utility import Utility, ValidationReport
 
+MODEL_PRESETS: dict[str, str] = {
+    "GPT-5.3-Codex (latest coding, 2026-02-05)": "gpt-5.3-codex",
+    "GPT-5.3 (latest general, 2026-02-05)": "gpt-5.3",
+    "Custom": "",
+}
+
 st.set_page_config(
     page_title="Remediation Creator Next",
     page_icon="🛠️",
@@ -95,6 +101,13 @@ def _default_state() -> dict[str, object]:
         "extra_requirements": "",
         "temperature": 0.2,
         "max_tokens": 1600,
+        "llm_provider": "Azure OpenAI",
+        "model_preset": "GPT-5.3-Codex (latest coding, 2026-02-05)",
+        "model_name": _secret(
+            "AZURE_OPENAI_CHATGPT_DEPLOYMENT",
+            _secret("OPENAI_MODEL", "gpt-5.3-codex"),
+        ),
+        "openai_api_key": "",
         "run_as_32_bit": True,
         "enforce_signature_check": False,
         "detection_script": "",
@@ -128,16 +141,36 @@ def _reset_scripts() -> None:
 
 
 def _create_utility() -> tuple[Utility | None, list[str]]:
-    required = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_CHATGPT_DEPLOYMENT"]
-    missing = [key for key in required if key not in st.secrets]
-    if missing:
-        return None, missing
+    provider = st.session_state.llm_provider
+    model_name = st.session_state.model_name.strip()
+
+    if not model_name:
+        return None, ["Model/deployment name"]
+
+    if provider == "Azure OpenAI":
+        required = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT"]
+        missing = [key for key in required if key not in st.secrets]
+        if missing:
+            return None, missing
+
+        utility = Utility(
+            provider="azure",
+            model_name=model_name,
+            api_key=st.secrets["AZURE_OPENAI_KEY"],
+            azure_openai_endpoint=st.secrets["AZURE_OPENAI_ENDPOINT"],
+            azure_openai_api_version=_secret("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+            graph_auth_header=st.session_state.graph_auth_header,
+        )
+        return utility, []
+
+    openai_key = st.session_state.openai_api_key.strip() or _secret("OPENAI_API_KEY", "")
+    if not openai_key:
+        return None, ["OPENAI_API_KEY"]
 
     utility = Utility(
-        azure_openai_key=st.secrets["AZURE_OPENAI_KEY"],
-        azure_openai_endpoint=st.secrets["AZURE_OPENAI_ENDPOINT"],
-        azure_openai_deployment=st.secrets["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-        azure_openai_api_version=_secret("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+        provider="openai",
+        model_name=model_name,
+        api_key=openai_key,
         graph_auth_header=st.session_state.graph_auth_header,
     )
     return utility, []
@@ -213,13 +246,14 @@ def _load_community_catalog(owner: str, repo: str, ref: str, github_token: str) 
 _init_state()
 _inject_styles()
 
-utility, missing_secrets = _create_utility()
+utility: Utility | None = None
+missing_secrets: list[str] = []
 
 st.markdown(
     """
     <div class="hero">
       <h2 style="margin:0;">Remediation Creator Next</h2>
-      <p>Generate, review, validate and publish Intune detection/remediation scripts with Azure OpenAI.</p>
+      <p>Generate, review, validate and publish Intune detection/remediation scripts with Azure OpenAI or OpenAI.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -228,10 +262,32 @@ st.markdown(
 with st.sidebar:
     st.header("Control Center")
 
-    if missing_secrets:
-        st.error(
-            "Missing secrets: " + ", ".join(missing_secrets) + ". Please update .streamlit/secrets.toml"
+    st.subheader("Model")
+    st.session_state.llm_provider = st.selectbox(
+        "Provider",
+        options=["Azure OpenAI", "OpenAI"],
+        index=0 if st.session_state.llm_provider == "Azure OpenAI" else 1,
+    )
+    preset_labels = list(MODEL_PRESETS.keys())
+    preset_index = preset_labels.index(st.session_state.model_preset) if st.session_state.model_preset in preset_labels else 0
+    st.session_state.model_preset = st.selectbox("Preset", options=preset_labels, index=preset_index)
+    if st.session_state.model_preset != "Custom":
+        st.session_state.model_name = MODEL_PRESETS[st.session_state.model_preset]
+    st.session_state.model_name = st.text_input(
+        "Model / deployment",
+        value=st.session_state.model_name,
+        help="Azure: deployment name. OpenAI: model id (e.g. gpt-5.3-codex).",
+    )
+    if st.session_state.llm_provider == "OpenAI":
+        st.session_state.openai_api_key = st.text_input(
+            "OpenAI API key (optional if set in secrets)",
+            value=st.session_state.openai_api_key,
+            type="password",
         )
+
+    utility, missing_secrets = _create_utility()
+    if missing_secrets:
+        st.error("Missing configuration: " + ", ".join(missing_secrets))
 
     st.subheader("Generation")
     st.session_state.mode = st.radio(
@@ -376,7 +432,7 @@ with col_a:
 
         if c_generate.button("Generate scripts", use_container_width=True, type="primary"):
             if utility is None:
-                st.error("OpenAI configuration missing. Check secrets.")
+                st.error("LLM configuration missing. Check sidebar settings and secrets.")
             elif not st.session_state.description.strip():
                 st.error("Please enter a description first.")
             else:
@@ -424,7 +480,7 @@ with col_a:
         c_validate, c_save = st.columns(2)
         if c_validate.button("Run validation", use_container_width=True):
             if utility is None:
-                st.error("OpenAI configuration missing. Check secrets.")
+                st.error("LLM configuration missing. Check sidebar settings and secrets.")
             else:
                 st.session_state.last_validation = utility.validate_scripts(
                     detection_script=st.session_state.detection_script,
@@ -489,7 +545,7 @@ with col_a:
 
             if st.button("Upload to Graph", type="primary", use_container_width=True):
                 if utility is None:
-                    st.error("OpenAI configuration missing. Check secrets.")
+                    st.error("LLM configuration missing. Check sidebar settings and secrets.")
                 elif "Authorization" not in st.session_state.graph_auth_header:
                     st.error("Authenticate to Graph in the sidebar first.")
                 else:

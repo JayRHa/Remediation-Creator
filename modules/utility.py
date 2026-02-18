@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
-from openai import AzureOpenAI
+from openai import AzureOpenAI, OpenAI
 
 from modules.prompts import DETECTION_SCRIPT_PROMPT, REMEDIATION_SCRIPT_PROMPT
 
@@ -62,19 +62,36 @@ class Utility:
 
     def __init__(
         self,
-        azure_openai_key: str,
-        azure_openai_endpoint: str,
-        azure_openai_deployment: str,
-        graph_auth_header: dict[str, str] | None,
+        model_name: str,
+        graph_auth_header: dict[str, str] | None = None,
+        provider: str = "azure",
+        api_key: str = "",
+        azure_openai_endpoint: str = "",
         azure_openai_api_version: str = "2024-10-21",
     ):
-        self.azure_openai_deployment = azure_openai_deployment
+        self.provider = provider.lower().strip()
+        self.model_name = model_name.strip()
         self.graph_auth_header = graph_auth_header or {}
-        self.client = AzureOpenAI(
-            api_key=azure_openai_key,
-            api_version=azure_openai_api_version,
-            azure_endpoint=azure_openai_endpoint,
-        )
+
+        if not self.model_name:
+            raise ValueError("Model/deployment name is required.")
+
+        if self.provider == "openai":
+            if not api_key.strip():
+                raise ValueError("OPENAI_API_KEY is required for OpenAI provider.")
+            self.client = OpenAI(api_key=api_key)
+        elif self.provider == "azure":
+            if not api_key.strip():
+                raise ValueError("AZURE_OPENAI_KEY is required for Azure provider.")
+            if not azure_openai_endpoint.strip():
+                raise ValueError("AZURE_OPENAI_ENDPOINT is required for Azure provider.")
+            self.client = AzureOpenAI(
+                api_key=api_key,
+                api_version=azure_openai_api_version,
+                azure_endpoint=azure_openai_endpoint,
+            )
+        else:
+            raise ValueError("Unsupported provider. Use 'azure' or 'openai'.")
 
     def generate(
         self,
@@ -231,7 +248,7 @@ class Utility:
         max_tokens: int,
     ) -> str:
         response = self.client.chat.completions.create(
-            model=self.azure_openai_deployment,
+            model=self.model_name,
             temperature=temperature,
             max_tokens=max_tokens,
             messages=[
