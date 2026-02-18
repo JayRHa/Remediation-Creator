@@ -1,166 +1,299 @@
-""" """
-import streamlit as st
-import json
-import requests
+"""Core service utilities for script generation, validation, and upload."""
+
+from __future__ import annotations
+
 import base64
+import hashlib
+import json
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
-DETECTION_SCRIPT_PROMPT = """
-[MUST] Create a PowerShell script for Microsoft Intune that detects a specific issue on Windows devices.
-[MUST] The script should only detect the issue without changing, fixing, or remediating it.
-[MUST] Utilize the provided sample or template script as a basis, modifying it according to your specific detection needs.
-[MUST] Ensure the script returns an Exit Code 0 if the issue is not detected, and Exit Code 1 if the issue is detected.
-[MUST] Never change something on the system only detect!
-[MUST] The output must be like following this example: 
-Write-Host "No issue detected"
-exit 0 # or exit 1
-"""
+import requests
+from openai import AzureOpenAI
+
+from modules.prompts import DETECTION_SCRIPT_PROMPT, REMEDIATION_SCRIPT_PROMPT
+
+GRAPH_BASE_URL = "https://graph.microsoft.com/beta/"
+DEFAULT_TIMEOUT_SECONDS = 45
+
+_DETECTION_MUTATION_MARKERS = (
+    r"\bSet-",
+    r"\bNew-",
+    r"\bRemove-",
+    r"\bRename-",
+    r"\bStart-",
+    r"\bStop-",
+    r"\bRestart-",
+    r"\bInvoke-",
+    r"\breg\s+add\b",
+    r"\bsc\s+config\b",
+)
 
 
-REMEDIATION_SCRIPT_PROMPT = """
-[MUST] Develop a PowerShell remediation script for Microsoft Intune, specifically for Windows devices.
-[MUST] This script should perform actions to remediate the detected issue, based on the detection script's findings.
-[MUST] Customize the script to target the specific remediation actions required for your scenario.
-[MUST] Ensure the script returns appropriate Exit Codes based on the success or failure of the remediation process.
-[MUST] The script must be adaptable based on user inputs or script parameters to handle different remediation scenarios.
-[MUST] Include comprehensive error handling and documentation within the script for ease of understanding and maintenance.
-[MUST] The output must be like following this example: 
-Write-Host "Issue remediated successfully"
-exit 0 # or exit 1
- """
+@dataclass(slots=True)
+class ScriptArtifact:
+    """Generated detection/remediation script bundle."""
 
-BASE_URL = "https://graph.microsoft.com/beta/"
+    description: str
+    mode: str
+    detection_script: str
+    remediation_script: str
+    created_at: str
+    fingerprint: str
+
+
+@dataclass(slots=True)
+class ValidationReport:
+    """Validation output for generated scripts."""
+
+    errors: list[str]
+    warnings: list[str]
+    infos: list[str]
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
 
 class Utility:
-    def __init__(self, azure_openai_key:str, azure_openai_endpoint:str, azure_openai_deployment:str, graph_auth_header:str):
-        """ Init Utility calls """
-        self.azure_openai_key = azure_openai_key
-        self.azure_openai_endpoint = azure_openai_endpoint
+    """Backend service facade for AI generation and Graph upload."""
+
+    def __init__(
+        self,
+        azure_openai_key: str,
+        azure_openai_endpoint: str,
+        azure_openai_deployment: str,
+        graph_auth_header: dict[str, str] | None,
+        azure_openai_api_version: str = "2024-10-21",
+    ):
         self.azure_openai_deployment = azure_openai_deployment
-        self.graph_auth_header = graph_auth_header
-    
-    def invoke_gpt_call(self,user:str,system:str=None,history:str=None):
-        """ Invoke the Azure OpenAI API"""
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": self.azure_openai_key
-        }
-
-        messages = []
-
-        if system is not None:
-            messages.append({
-                "role": "system",
-                "content": system
-            })
-
-        if history is not None:
-             messages = messages + history
-
-        messages.append({
-            "role": "user",
-            "content": user
-        })
-
-        body = {
-            "messages": messages,
-            "temperature": 0
-        }
-
-        try:
-            response = requests.post(f"{self.azure_openai_endpoint}/openai/deployments/{self.azure_openai_deployment}/chat/completions?api-version=2023-05-15", headers=headers, data=json.dumps(body))
-            response.raise_for_status()
-            response_data = response.json()
-            return response_data["choices"][0]["message"]["content"]
-        except Exception as e:
-            print(f"Error while executing a call to {self.azure_openai_endpoint}: {e}")
-            return None
-        
-
-    def run_graph(self, endpoint:str, body:dict):
-        """ Run a graph call"""
-        uri = BASE_URL + endpoint
-        print(body)
-        try:
-            response = requests.post(uri, headers=self.graph_auth_header, json=body)
-        except Exception as e:
-            raise(f"Error while executing a call to {uri}: {e}")
-        response.raise_for_status()
-            
-    def __generate_remediations__(self,description:str, detection_script:str):
-        prompt = f"""
-Create a endpoint analytics remediation script which fits to the detection script based on the following description:
-{description}
-
-# Detection script
-{detection_script}
-
-The output MUST only be an valid Powershell script without description or text
-"""
-
-        st.session_state.remediation_script = self.invoke_gpt_call(
-            user=prompt
-            ,system=REMEDIATION_SCRIPT_PROMPT
-            ,history=None
+        self.graph_auth_header = graph_auth_header or {}
+        self.client = AzureOpenAI(
+            api_key=azure_openai_key,
+            api_version=azure_openai_api_version,
+            azure_endpoint=azure_openai_endpoint,
         )
-        return st.session_state.remediation_script
 
-    def __generate_detection__(self, description:str):
-        prompt = f"""
-Create a endpoint analytics detection script based on the following description:
-{description}
+    def generate(
+        self,
+        description: str,
+        include_remediation: bool,
+        temperature: float = 0.2,
+        max_tokens: int = 1600,
+        extra_requirements: str = "",
+    ) -> ScriptArtifact:
+        """Generate detection and optionally remediation scripts."""
+        if not description.strip():
+            raise ValueError("Description cannot be empty.")
 
-The output MUST only be an valid Powershell script without description or text
-"""
-
-        st.session_state.detection_script = self.invoke_gpt_call(
-            user=prompt
-            ,system=DETECTION_SCRIPT_PROMPT
-            ,history=None
+        detection_prompt = self._build_detection_prompt(description, extra_requirements)
+        detection_script = self._invoke_gpt_call(
+            user=detection_prompt,
+            system=DETECTION_SCRIPT_PROMPT,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        return st.session_state.detection_script
 
-    def upload(self, scope:str="System") -> None:
-        if st.session_state.scriptname == "" or st.session_state.scriptname == "WIN-NAMEOFYOURSCRIPT":
-            st.error("Please enter a scriptname or change the default value")
-            return False
-            
-        if st.session_state.detection_script == "":
-            st.error("Please generate the detection script")
-            return  False
-        else:
-            # Encode and then decode to convert bytes to string
-            base64_det_script = base64.b64encode(st.session_state.detection_script.encode("utf-8")).decode('utf-8')
+        remediation_script = ""
+        mode = "Detection only"
+        if include_remediation:
+            remediation_prompt = self._build_remediation_prompt(
+                description=description,
+                detection_script=detection_script,
+                extra_requirements=extra_requirements,
+            )
+            remediation_script = self._invoke_gpt_call(
+                user=remediation_prompt,
+                system=REMEDIATION_SCRIPT_PROMPT,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            mode = "Detection and Remediation"
 
-        base64_rem_script = ""
-        if st.session_state.remediation_script != "":
-            # Encode and then decode to convert bytes to string
-            base64_rem_script = base64.b64encode(st.session_state.remediation_script.encode("utf-8")).decode('utf-8')
+        return ScriptArtifact(
+            description=description.strip(),
+            mode=mode,
+            detection_script=detection_script.strip(),
+            remediation_script=remediation_script.strip(),
+            created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
+            fingerprint=self._fingerprint(detection_script, remediation_script),
+        )
 
-        body = {
-            "displayName": st.session_state.scriptname,
-            "description": st.session_state.description,
-            "publisher": "GPT Remediation Creator",
-            "runAs32Bit": True,
-            "runAsAccount": scope,  # Ensure 'scope' is defined earlier in your code
-            "enforceSignatureCheck": False,
-            "detectionScriptContent": base64_det_script,
-            "remediationScriptContent": base64_rem_script,
-            "roleScopeTagIds": ["0"]
+    def validate_scripts(self, detection_script: str, remediation_script: str = "") -> ValidationReport:
+        """Run lightweight static validation checks for generated scripts."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        infos: list[str] = []
+
+        detection = detection_script.strip()
+        remediation = remediation_script.strip()
+
+        if not detection:
+            errors.append("Detection script is empty.")
+            return ValidationReport(errors=errors, warnings=warnings, infos=infos)
+
+        detection_exits = self._extract_exit_codes(detection)
+        if 0 not in detection_exits or 1 not in detection_exits:
+            warnings.append(
+                "Detection script should include both exit 0 and exit 1 paths for Intune compliance logic."
+            )
+
+        risky_commands = self._find_detection_mutations(detection)
+        if risky_commands:
+            warnings.append(
+                "Detection script appears to mutate the system. Check these commands: "
+                + ", ".join(sorted(risky_commands))
+            )
+
+        if "Write-Host" not in detection:
+            infos.append("Detection script has no Write-Host output. Consider adding operator-friendly status text.")
+
+        if remediation:
+            remediation_exits = self._extract_exit_codes(remediation)
+            if 0 not in remediation_exits:
+                warnings.append("Remediation script should include exit 0 on successful remediation.")
+            if "try" not in remediation.lower() or "catch" not in remediation.lower():
+                infos.append("Remediation script has no explicit try/catch block.")
+            if "Write-Host" not in remediation:
+                infos.append("Remediation script has no Write-Host output.")
+
+        return ValidationReport(errors=errors, warnings=warnings, infos=infos)
+
+    def build_upload_payload(
+        self,
+        script_name: str,
+        description: str,
+        scope: str,
+        detection_script: str,
+        remediation_script: str = "",
+        run_as_32_bit: bool = True,
+        enforce_signature_check: bool = False,
+        publisher: str = "Remediation Creator Next",
+    ) -> dict[str, Any]:
+        """Build a Graph-ready upload payload for device health scripts."""
+        clean_name = script_name.strip()
+        if not clean_name:
+            raise ValueError("Script name is required.")
+        if not detection_script.strip():
+            raise ValueError("Detection script is required for upload.")
+
+        normalized_scope = "system" if scope.lower().startswith("system") else "user"
+
+        payload = {
+            "displayName": clean_name,
+            "description": description.strip(),
+            "publisher": publisher,
+            "runAs32Bit": run_as_32_bit,
+            "runAsAccount": normalized_scope,
+            "enforceSignatureCheck": enforce_signature_check,
+            "detectionScriptContent": self._b64(detection_script),
+            "remediationScriptContent": self._b64(remediation_script) if remediation_script.strip() else "",
+            "roleScopeTagIds": ["0"],
         }
+        return payload
 
-        # Convert to json
-        #body = json.dumps(body)
+    def upload_payload(self, payload: dict[str, Any], endpoint: str = "deviceManagement/deviceHealthScripts") -> dict[str, Any]:
+        """Upload a prepared payload to Microsoft Graph."""
+        if not self.graph_auth_header or "Authorization" not in self.graph_auth_header:
+            raise ValueError("Graph authentication header is missing. Authenticate first.")
 
-        endpoint = "deviceManagement/deviceHealthScripts"
-        self.run_graph(endpoint=endpoint, body=body)
-        return True
+        uri = GRAPH_BASE_URL + endpoint
+        response = requests.post(
+            uri,
+            headers=self.graph_auth_header,
+            json=payload,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
 
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Graph upload failed ({response.status_code}): {response.text[:500]}"
+            )
 
-    def generate(self) -> None:
-        """ Generate the scripts"""
-        if st.session_state.description == "":
-            st.error("Please enter a description")
-            return
-        self.__generate_detection__(description = st.session_state.description)
-        if st.session_state.selected == "Detection and Remediation":
-            self.__generate_remediations__(description = st.session_state.description, detection_script = st.session_state.detection_script)
+        if response.content:
+            try:
+                return response.json()
+            except ValueError:
+                return {"status": "ok", "raw": response.text}
+        return {"status": "ok"}
+
+    @staticmethod
+    def pretty_json(data: dict[str, Any]) -> str:
+        return json.dumps(data, indent=2, ensure_ascii=True)
+
+    def _invoke_gpt_call(
+        self,
+        user: str,
+        system: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        response = self.client.chat.completions.create(
+            model=self.azure_openai_deployment,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        content = response.choices[0].message.content
+        if content is None:
+            raise RuntimeError("Model returned an empty response.")
+        return content.strip()
+
+    @staticmethod
+    def _build_detection_prompt(description: str, extra_requirements: str) -> str:
+        prompt = (
+            "Create a Microsoft Intune Endpoint Analytics detection script for Windows devices.\n\n"
+            f"Description:\n{description.strip()}\n\n"
+            "Output constraints:\n"
+            "- Output must be valid PowerShell only\n"
+            "- No markdown, no explanation text\n"
+            "- Include clear status output\n"
+        )
+        if extra_requirements.strip():
+            prompt += f"\nAdditional requirements:\n{extra_requirements.strip()}\n"
+        return prompt
+
+    @staticmethod
+    def _build_remediation_prompt(description: str, detection_script: str, extra_requirements: str) -> str:
+        prompt = (
+            "Create a Microsoft Intune Endpoint Analytics remediation script for Windows devices.\n\n"
+            f"Description:\n{description.strip()}\n\n"
+            "Detection script context:\n"
+            f"{detection_script.strip()}\n\n"
+            "Output constraints:\n"
+            "- Output must be valid PowerShell only\n"
+            "- No markdown, no explanation text\n"
+            "- Include robust error handling and status output\n"
+        )
+        if extra_requirements.strip():
+            prompt += f"\nAdditional requirements:\n{extra_requirements.strip()}\n"
+        return prompt
+
+    @staticmethod
+    def _extract_exit_codes(script: str) -> set[int]:
+        codes = re.findall(r"\bexit\s+([0-9]+)\b", script, flags=re.IGNORECASE)
+        return {int(code) for code in codes}
+
+    @staticmethod
+    def _find_detection_mutations(script: str) -> set[str]:
+        found = set()
+        for marker in _DETECTION_MUTATION_MARKERS:
+            if re.search(marker, script, flags=re.IGNORECASE):
+                found.add(marker.replace("\\b", ""))
+        return found
+
+    @staticmethod
+    def _fingerprint(detection_script: str, remediation_script: str) -> str:
+        digest = hashlib.sha256(
+            (detection_script.strip() + "\n--\n" + remediation_script.strip()).encode("utf-8")
+        ).hexdigest()
+        return digest[:12]
+
+    @staticmethod
+    def _b64(script: str) -> str:
+        return base64.b64encode(script.encode("utf-8")).decode("utf-8")

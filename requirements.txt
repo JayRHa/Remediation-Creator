@@ -1,2 +1,4 @@
-streamlit
-azure.identity
+streamlit==1.54.0
+azure-identity==1.25.2
+openai==2.21.0
+requests==2.32.5

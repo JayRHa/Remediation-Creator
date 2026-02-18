@@ -1,53 +1,74 @@
-# Remediation Script Creator
-- Find more informations in my blog post on [jannikreinhard.com](jannikreinhard.com)
+# Remediation Creator Next
 
+Modernisierte Streamlit-App zum Erstellen, Prüfen und Publizieren von Microsoft Intune Detection- und Remediation-Skripten mit Azure OpenAI.
 
-![Alt text](https://github.com/JayRHa/Remediation-Creator/blob/main/.pictures/tool.png)
+![Tool UI](https://github.com/JayRHa/Remediation-Creator/blob/main/.pictures/tool.png)
 
-## Intro
-Remediations play a pivotal role in effective client management, allowing organizations to proactively identify and resolve end-user issues. Additionally, they serve as a valuable tool for enforcing specific settings or configurations that may not be natively supported in Microsoft Intune. However, the process of crafting these scripts can often be intricate and time-consuming.
+## Was ist neu
 
-Imagine a solution where you can simply describe your desired configurations, and a tool generates the necessary scripts for you. If you find this idea appealing and are keen to explore such a solution, this blog is tailored to meet your exact needs.
+- Modernes UI mit klarem Workflow: `Generate` -> `Review` -> `Publish`
+- Sidebar-Control-Center für Modell- und Publish-Settings
+- Szenario-Vorlagen (BitLocker, Disk Cleanup, Time Service, Local Admin Drift)
+- Zusätzliche Requirement-Box für präzisere Script-Vorgaben
+- Script-Validierung mit Checks für Exit-Codes und riskante Detection-Kommandos
+- Snapshot-History inkl. Restore
+- Download von `detection.ps1`, `remediation.ps1` und `payload.json`
+- Upload-Payload-Preview vor dem Graph-Upload
+- Graph Connect/Disconnect direkt aus der UI
 
-## Contribution
-<table>
-  <tbody>
-    <tr>
-        <td align="center"><a href="https://github.com/JayRHa"><img src="https://avatars.githubusercontent.com/u/73911860?v=4" width="100px;" alt="Jannik Reinhard"/><br /><sub><b>Jannik Reinhard</b></sub></a><br /><a href="https://twitter.com/jannik_reinhard" title="Twitter">💬</a> <a href="https://www.linkedin.com/in/jannik-r/" title="LinkedIn">💬</a></td>
-  </tbody>
-</table>
+## Tech-Update (Stand: 18. Februar 2026)
 
-## How does it work
-In the end, the process is remarkably straightforward. The tool generates a detection script and, if desired, a remediation script based on your provided description. It then seamlessly uploads these scripts to your tenant, streamlining the entire process.
+- `streamlit==1.54.0`
+- `azure-identity==1.25.2`
+- `openai==2.21.0`
+- `requests==2.32.5`
 
+## Voraussetzungen
 
-![Alt text](https://github.com/JayRHa/Remediation-Creator/blob/main/.pictures/howdoesitwork.png)
+- Python 3.10+
+- Azure OpenAI Resource + Deployment
+- App Registration mit passenden Graph-Rechten für Device Health Scripts
 
-1. User authentication: The process starts with user authentication, ensuring that only authorized users can upload scripts using the user token
-2. User describes the purpose of the script: After authentication, the user provides a description of what the script is intended to do.
-3. Building a prompt with instructions and the description to generate a detection script: This description, along with instructions, is used to build a prompt for GPT-3.5-turbo, which will then generate a detection script based on the input.
-4. (Optional) Building an additional prompt with instructions, the detection script, and the description to generate a remediation script: Optionally, a further step involves building another prompt that includes the instructions, the detection script that was generated, and the description. This new prompt is for GPT-3.5-turbo to create a remediation script, presumably to address the issues the detection script identified.
-5. Display at web page: The scripts or the output from GPT-3.5-turbo are then displayed on a web page.
-6. User presses upload and script will add to tenant: Finally, the user can press an upload button, resulting in the script being added to the tenant.
+## Einrichtung
 
+1. Repository klonen.
+2. `.streamlit/secrets.toml.example` nach `.streamlit/secrets.toml` kopieren.
+3. Secrets ausfüllen:
 
-## Prerequisites
-- Python installed on the system
-- GPT enabled Subscription (https://aka.ms/oai/access)
+```toml
+AZURE_OPENAI_KEY = "..."
+AZURE_OPENAI_ENDPOINT = "https://YOUR-ENDPOINT.openai.azure.com"
+AZURE_OPENAI_CHATGPT_DEPLOYMENT = "gpt-4.1-mini"
+AZURE_OPENAI_API_VERSION = "2024-10-21"
+APP_REGISTRATION_ID = "..."
+GRAPH_SCOPE = "https://graph.microsoft.com/.default"
+```
 
-## Post steps
-- Rename the secrets.toml.example to secrets.toml
-- Once this is done fill out the informations in this file:
-  - AZURE_OPENAI_KEY = "XXXXXXXXX"
-  - AZURE_OPENAI_ENDPOINT = "https://YOURENDPOINTNAME.openai.azure.com"
-  - AZURE_OPENAI_CHATGPT_DEPLOYMENT = "gpt-35-turbo"
-  - APP_REGISTRATION_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e" # Default Graph App
+## Start
 
-## How to contribute?
-If you have a ideas for improvements or for missing features as well as bugs, contact me via my blog, social media or open an issue on the repository with an description of your idea or make an pull request
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m streamlit run app.py
+```
 
-## Disclosure
-This is a community repository. There is no guarantee for this. Please check thoroughly before running the scripts.
+oder mit dem Helper:
 
-## License
-The tool is completely free and open-usource and licensed nder the Apache 2.0 license. It build based on the [streamlit](https://github.com/streamlit/streamlit) package
+```bash
+./run.sh
+```
+
+## Typischer Workflow
+
+1. Modus und Parameter im Sidebar-Control-Center setzen.
+2. Beschreibung (ggf. mit Template) erfassen.
+3. Skripte generieren.
+4. Im Review-Tab prüfen, validieren und bei Bedarf manuell anpassen.
+5. Im Publish-Tab Payload prüfen und zu Graph hochladen.
+
+## Sicherheitshinweis
+
+KI-generierte Skripte müssen vor produktivem Einsatz technisch und fachlich geprüft werden.
+
+## Lizenz
+
+Apache 2.0

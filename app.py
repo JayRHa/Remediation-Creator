@@ -1,111 +1,451 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+
 import streamlit as st
-#from msal_streamlit_authentication import msal_authentication
-from modules.utility import Utility
 from azure.identity import InteractiveBrowserCredential
 
-#################################################################################
-################################# Vars ##########################################
-#################################################################################
-st.set_page_config(page_title="GPT Remediation Creator", page_icon ="chart_with_upwards_trend", layout = 'wide')
+from modules.prompts import SCENARIO_TEMPLATES
+from modules.utility import Utility, ValidationReport
 
-if "login_token" not in st.session_state:
-    st.session_state.login_token = InteractiveBrowserCredential(client_id=st.secrets["APP_REGISTRATION_ID"]).get_token(".default")
-if "question" not in st.session_state:
-    st.session_state.question = ""
-if "selections" not in st.session_state:
-    st.session_state.selections = ["Detection only", "Detection and Remediation"]
-if "selected" not in st.session_state:
-    st.session_state.selected = "Detection and Remediation"
-if "description" not in st.session_state:
-    st.session_state.description = ""
-if "scriptname" not in st.session_state:
-    st.session_state.scriptname = "WIN-NAMEOFYOURSCRIPT"
-if "generated" not in st.session_state:
-    st.session_state.generated = False
-if "detection_script" not in st.session_state:
-    st.session_state.detection_script = ""
-if "remediation_script" not in st.session_state:
-    st.session_state.remediation_script = ""
-
-if "selections_scope" not in st.session_state:
-    st.session_state.selections_scope = ["System", "User"] 
-if "scope" not in st.session_state:
-    st.session_state.scope = "System"
+st.set_page_config(
+    page_title="Remediation Creator Next",
+    page_icon="🛠️",
+    layout="wide",
+)
 
 
-def get_graph_header(token):
-    return {
-        'Content-Type': 'application/json',
-        'Authorization': f"Bearer {token}"
-    }
-if "graph_auth_header" not in st.session_state:
-    st.session_state.graph_auth_header = get_graph_header(st.session_state.login_token.token)
+def _secret(name: str, default: str = "") -> str:
+    return st.secrets[name] if name in st.secrets else default
 
 
-print(st.session_state.graph_auth_header)
-if "utility" not in st.session_state:
-    st.session_state.utility = Utility(
-        azure_openai_key=st.secrets["AZURE_OPENAI_KEY"]
-        ,azure_openai_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
-        ,azure_openai_deployment=st.secrets["AZURE_OPENAI_CHATGPT_DEPLOYMENT"]
-        ,graph_auth_header=st.session_state.graph_auth_header
+def _inject_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+        html, body, [class*="css"] {
+            font-family: 'Manrope', sans-serif;
+        }
+
+        h1, h2, h3 {
+            letter-spacing: -0.02em;
+        }
+
+        .hero {
+            background: linear-gradient(120deg, #0054d1 0%, #0f9b7a 100%);
+            border-radius: 16px;
+            padding: 1.2rem 1.4rem;
+            color: #ffffff;
+            margin-bottom: 1rem;
+            box-shadow: 0 14px 35px rgba(0, 84, 209, 0.22);
+        }
+
+        .hero p {
+            margin: 0.25rem 0 0 0;
+            opacity: 0.96;
+        }
+
+        .stButton > button {
+            border-radius: 12px;
+            border: 1px solid rgba(0, 84, 209, 0.25);
+            background: linear-gradient(120deg, #ffffff 0%, #f1f6ff 100%);
+            font-weight: 600;
+        }
+
+        .stTextArea textarea, .stTextInput input {
+            border-radius: 10px;
+        }
+
+        pre, code {
+            font-family: 'IBM Plex Mono', monospace !important;
+        }
+
+        .stat-card {
+            border: 1px solid rgba(15, 155, 122, 0.25);
+            background: linear-gradient(180deg, #f3fffb 0%, #eff7ff 100%);
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            margin-bottom: 0.8rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-#################################################################################
-################################# Page ##########################################
-#################################################################################
-st.title("GPT Remediation Creator")
 
-st.markdown("This tool will help you create remediation steps for GPT violations. It will use the Azure OpenAI API to generate the remediation steps. You can then copy and paste the remediation steps into the GPT violation remediation section.")
 
-def clear():
+def _default_state() -> dict[str, object]:
+    return {
+        "mode": "Detection and Remediation",
+        "scope": "System",
+        "description": "",
+        "script_name": "WIN-NAMEOFYOURSCRIPT",
+        "publisher": "Remediation Creator Next",
+        "extra_requirements": "",
+        "temperature": 0.2,
+        "max_tokens": 1600,
+        "run_as_32_bit": True,
+        "enforce_signature_check": False,
+        "detection_script": "",
+        "remediation_script": "",
+        "generated": False,
+        "history": [],
+        "graph_auth_header": {},
+        "graph_scope": _secret("GRAPH_SCOPE", "https://graph.microsoft.com/.default"),
+        "last_validation": None,
+    }
+
+
+def _init_state() -> None:
+    for key, value in _default_state().items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def _reset_scripts() -> None:
     st.session_state.description = ""
-    st.session_state.scriptname = "WIN-NAMEOFYOURSCRIPT"
-    st.session_state.generated = False
+    st.session_state.script_name = "WIN-NAMEOFYOURSCRIPT"
+    st.session_state.extra_requirements = ""
     st.session_state.detection_script = ""
     st.session_state.remediation_script = ""
+    st.session_state.generated = False
+    st.session_state.last_validation = None
 
-tab1, tab2 = st.tabs(["Config", "Results"])
-with tab1:
-    #Get index of the selected item
-    index = st.session_state.selections.index(st.session_state.selected)
-    st.session_state.selected = st.selectbox(label="Select the scope:", options=st.session_state.selections, index=index)
 
-    st.session_state.description = st.text_area(label="Enter your description / errorcode / etc. for the remediation here  (Very detailed description):", value=st.session_state.description)
+def _create_utility() -> tuple[Utility | None, list[str]]:
+    required = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_CHATGPT_DEPLOYMENT"]
+    missing = [key for key in required if key not in st.secrets]
+    if missing:
+        return None, missing
 
-    # Place the buttons beside each other
-    col1, col2, col3 = st.columns([0.1, 0.1, 0.8])
+    utility = Utility(
+        azure_openai_key=st.secrets["AZURE_OPENAI_KEY"],
+        azure_openai_endpoint=st.secrets["AZURE_OPENAI_ENDPOINT"],
+        azure_openai_deployment=st.secrets["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
+        azure_openai_api_version=_secret("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+        graph_auth_header=st.session_state.graph_auth_header,
+    )
+    return utility, []
 
-    if col1.button("Generate"):
-        try: 
-            with st.spinner('Script will be generated...'):
-                st.session_state.utility.generate()
-                st.session_state.generated = True
-            st.success('Script is generated. Change to the results tab!')
-        except Exception as e:
-            st.error(f"Error while generating the script: {e}")
 
-    if col2.button("Clear"):
-        clear()
+def _history_label(item: dict[str, str]) -> str:
+    return f"{item['created_at']} | {item['mode']} | {item['fingerprint']}"
 
-with tab2:
-    st.session_state.scriptname = st.text_input(label="Enter the name of the script here:", value=st.session_state.scriptname)
 
-    index = st.session_state.selections_scope.index(st.session_state.scope)
-    st.session_state.scope = st.selectbox(label="Select the scope:", options=st.session_state.selections_scope, index=index)
+def _save_history(mode: str) -> None:
+    if not st.session_state.detection_script.strip():
+        return
 
-    col11, col21 = st.columns([0.5, 0.5])
-    col11.title("Detection Script")
-    col11.text_area(label="Detection Script:", value=st.session_state.detection_script)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    key = hashlib.sha1(
+        (st.session_state.detection_script + "\n--\n" + st.session_state.remediation_script).encode(
+            "utf-8"
+        )
+    ).hexdigest()
 
-    col21.title("Remediation Script")
-    col21.text_area(label="Remediation Scripts:", value=st.session_state.remediation_script)
+    entry = {
+        "id": key,
+        "created_at": now,
+        "mode": mode,
+        "description": st.session_state.description.strip(),
+        "detection_script": st.session_state.detection_script,
+        "remediation_script": st.session_state.remediation_script,
+        "fingerprint": key[:8],
+    }
 
-    if st.session_state.generated  == True:
-        if st.button("Upload"):
-            if st.session_state.utility.upload(
-                scope=st.session_state.scope
-            ):
-                st.success('Script successful uploaded. https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DevicesMenu/~/remediations!')
+    st.session_state.history = [entry] + [
+        item for item in st.session_state.history if item["id"] != entry["id"]
+    ]
+    st.session_state.history = st.session_state.history[:12]
+
+
+def _render_validation(report: ValidationReport | None) -> None:
+    if report is None:
+        st.info("Noch keine Validierung ausgeführt.")
+        return
+
+    st.markdown(
+        f"""
+        <div class="stat-card">
+            <strong>Validation Summary</strong><br>
+            Errors: {len(report.errors)} | Warnings: {len(report.warnings)} | Infos: {len(report.infos)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    for err in report.errors:
+        st.error(err)
+    for warn in report.warnings:
+        st.warning(warn)
+    for info in report.infos:
+        st.info(info)
+
+
+def _build_graph_header(token: str) -> dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+
+
+_init_state()
+_inject_styles()
+
+utility, missing_secrets = _create_utility()
+
+st.markdown(
+    """
+    <div class="hero">
+      <h2 style="margin:0;">Remediation Creator Next</h2>
+      <p>Generate, review, validate and publish Intune detection/remediation scripts with Azure OpenAI.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.sidebar:
+    st.header("Control Center")
+
+    if missing_secrets:
+        st.error(
+            "Missing secrets: " + ", ".join(missing_secrets) + ". Please update .streamlit/secrets.toml"
+        )
+
+    st.subheader("Generation")
+    st.session_state.mode = st.radio(
+        "Mode",
+        options=["Detection only", "Detection and Remediation"],
+        index=1 if st.session_state.mode == "Detection and Remediation" else 0,
+    )
+    st.session_state.temperature = st.slider("Temperature", 0.0, 1.0, float(st.session_state.temperature), 0.05)
+    st.session_state.max_tokens = st.slider("Max tokens", 400, 4000, int(st.session_state.max_tokens), 100)
+
+    st.subheader("Publish")
+    st.session_state.scope = st.selectbox("Run as", options=["System", "User"], index=0 if st.session_state.scope == "System" else 1)
+    st.session_state.run_as_32_bit = st.toggle("Run as 32-bit", value=bool(st.session_state.run_as_32_bit))
+    st.session_state.enforce_signature_check = st.toggle(
+        "Enforce signature check", value=bool(st.session_state.enforce_signature_check)
+    )
+
+    st.subheader("Graph Login")
+    st.session_state.graph_scope = st.text_input("Scope", value=st.session_state.graph_scope)
+    app_registration_id = _secret("APP_REGISTRATION_ID")
+
+    c1, c2 = st.columns(2)
+    if c1.button("Connect", use_container_width=True):
+        if not app_registration_id:
+            st.error("APP_REGISTRATION_ID is missing in secrets.")
+        else:
+            try:
+                credential = InteractiveBrowserCredential(client_id=app_registration_id)
+                token = credential.get_token(st.session_state.graph_scope).token
+                st.session_state.graph_auth_header = _build_graph_header(token)
+                st.success("Graph token acquired.")
+            except Exception as exc:
+                st.error(f"Graph authentication failed: {exc}")
+
+    if c2.button("Disconnect", use_container_width=True):
+        st.session_state.graph_auth_header = {}
+        st.info("Graph token removed.")
+
+    if "Authorization" in st.session_state.graph_auth_header:
+        st.caption("Graph status: Connected")
+    else:
+        st.caption("Graph status: Not connected")
+
+col_a, col_b = st.columns([0.65, 0.35])
+
+with col_a:
+    tabs = st.tabs(["Generate", "Review", "Publish"])
+
+    with tabs[0]:
+        st.subheader("Describe your remediation scenario")
+
+        template_names = [item["name"] for item in SCENARIO_TEMPLATES]
+        selected_template_name = st.selectbox("Template starter", options=["Custom"] + template_names)
+
+        if st.button("Insert template into description"):
+            if selected_template_name != "Custom":
+                selected_template = next(item for item in SCENARIO_TEMPLATES if item["name"] == selected_template_name)
+                if st.session_state.description.strip():
+                    st.session_state.description += "\n\n" + selected_template["description"]
+                else:
+                    st.session_state.description = selected_template["description"]
+
+        st.session_state.description = st.text_area(
+            "Description",
+            value=st.session_state.description,
+            height=220,
+            placeholder="Explain what should be detected and how it should be remediated...",
+        )
+
+        st.session_state.extra_requirements = st.text_area(
+            "Additional requirements (optional)",
+            value=st.session_state.extra_requirements,
+            height=120,
+            placeholder="e.g. keep all actions idempotent, include event log output",
+        )
+
+        c_generate, c_clear = st.columns([0.25, 0.2])
+
+        if c_generate.button("Generate scripts", use_container_width=True, type="primary"):
+            if utility is None:
+                st.error("OpenAI configuration missing. Check secrets.")
+            elif not st.session_state.description.strip():
+                st.error("Please enter a description first.")
             else:
-                st.error('Error while uploading the script. Please check the logs!')
-            
+                with st.spinner("Generating scripts..."):
+                    try:
+                        artifact = utility.generate(
+                            description=st.session_state.description,
+                            include_remediation=st.session_state.mode == "Detection and Remediation",
+                            temperature=float(st.session_state.temperature),
+                            max_tokens=int(st.session_state.max_tokens),
+                            extra_requirements=st.session_state.extra_requirements,
+                        )
+                        st.session_state.detection_script = artifact.detection_script
+                        st.session_state.remediation_script = artifact.remediation_script
+                        st.session_state.generated = True
+                        _save_history(artifact.mode)
+                        st.session_state.last_validation = utility.validate_scripts(
+                            detection_script=st.session_state.detection_script,
+                            remediation_script=st.session_state.remediation_script,
+                        )
+                        st.success("Scripts generated and validated.")
+                    except Exception as exc:
+                        st.error(f"Generation failed: {exc}")
+
+        if c_clear.button("Clear", use_container_width=True):
+            _reset_scripts()
+
+    with tabs[1]:
+        st.subheader("Review and validate")
+
+        st.session_state.detection_script = st.text_area(
+            "Detection script",
+            value=st.session_state.detection_script,
+            height=280,
+            placeholder="Detection script appears here...",
+        )
+
+        st.session_state.remediation_script = st.text_area(
+            "Remediation script",
+            value=st.session_state.remediation_script,
+            height=280,
+            placeholder="Remediation script appears here...",
+        )
+
+        c_validate, c_save = st.columns(2)
+        if c_validate.button("Run validation", use_container_width=True):
+            if utility is None:
+                st.error("OpenAI configuration missing. Check secrets.")
+            else:
+                st.session_state.last_validation = utility.validate_scripts(
+                    detection_script=st.session_state.detection_script,
+                    remediation_script=st.session_state.remediation_script,
+                )
+
+        if c_save.button("Save snapshot", use_container_width=True):
+            _save_history(st.session_state.mode)
+            st.success("Snapshot saved to history.")
+
+        _render_validation(st.session_state.last_validation)
+
+        d_col, r_col = st.columns(2)
+        d_col.download_button(
+            label="Download detection.ps1",
+            data=st.session_state.detection_script,
+            file_name="detection.ps1",
+            mime="text/plain",
+            disabled=not bool(st.session_state.detection_script.strip()),
+            use_container_width=True,
+        )
+        r_col.download_button(
+            label="Download remediation.ps1",
+            data=st.session_state.remediation_script,
+            file_name="remediation.ps1",
+            mime="text/plain",
+            disabled=not bool(st.session_state.remediation_script.strip()),
+            use_container_width=True,
+        )
+
+    with tabs[2]:
+        st.subheader("Publish to Intune")
+
+        st.session_state.script_name = st.text_input("Script name", value=st.session_state.script_name)
+        st.session_state.publisher = st.text_input("Publisher", value=st.session_state.publisher)
+
+        payload = None
+        if utility is not None:
+            try:
+                payload = utility.build_upload_payload(
+                    script_name=st.session_state.script_name,
+                    description=st.session_state.description,
+                    scope=st.session_state.scope,
+                    detection_script=st.session_state.detection_script,
+                    remediation_script=st.session_state.remediation_script,
+                    run_as_32_bit=bool(st.session_state.run_as_32_bit),
+                    enforce_signature_check=bool(st.session_state.enforce_signature_check),
+                    publisher=st.session_state.publisher.strip() or "Remediation Creator Next",
+                )
+            except Exception as exc:
+                st.warning(f"Payload preview unavailable: {exc}")
+
+        if payload:
+            st.code(utility.pretty_json(payload), language="json")
+            st.download_button(
+                label="Download payload.json",
+                data=json.dumps(payload, indent=2),
+                file_name="intune_device_health_script_payload.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+            if st.button("Upload to Graph", type="primary", use_container_width=True):
+                if utility is None:
+                    st.error("OpenAI configuration missing. Check secrets.")
+                elif "Authorization" not in st.session_state.graph_auth_header:
+                    st.error("Authenticate to Graph in the sidebar first.")
+                else:
+                    try:
+                        result = utility.upload_payload(payload)
+                        st.success("Upload successful.")
+                        st.json(result)
+                    except Exception as exc:
+                        st.error(f"Upload failed: {exc}")
+
+with col_b:
+    st.subheader("History")
+    if st.session_state.history:
+        labels = [_history_label(item) for item in st.session_state.history]
+        selected = st.selectbox("Saved snapshots", options=labels)
+        selected_item = st.session_state.history[labels.index(selected)]
+
+        if st.button("Restore snapshot", use_container_width=True):
+            st.session_state.description = selected_item["description"]
+            st.session_state.detection_script = selected_item["detection_script"]
+            st.session_state.remediation_script = selected_item["remediation_script"]
+            st.session_state.generated = True
+            st.success("Snapshot restored.")
+
+        st.caption("Snapshot description")
+        st.write(selected_item["description"] or "(empty)")
+    else:
+        st.info("No history yet. Generate a script to create snapshots.")
+
+    st.subheader("Quick facts")
+    st.markdown(
+        f"""
+        <div class="stat-card">
+          Active mode: <strong>{st.session_state.mode}</strong><br>
+          Scope: <strong>{st.session_state.scope}</strong><br>
+          Detection chars: <strong>{len(st.session_state.detection_script)}</strong><br>
+          Remediation chars: <strong>{len(st.session_state.remediation_script)}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
