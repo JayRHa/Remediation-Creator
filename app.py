@@ -20,7 +20,7 @@ from modules.utility import Utility, ValidationReport
 
 MODEL_PRESETS: dict[str, str] = {
     "GPT-5.3-Codex (latest coding, 2026-02-05)": "gpt-5.3-codex",
-    "GPT-5.3 (latest general, 2026-02-05)": "gpt-5.3",
+    "GPT-5.3 (optional deployment)": "gpt-5.3",
     "Custom": "",
 }
 

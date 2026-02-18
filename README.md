@@ -16,7 +16,7 @@ Modernisierte Streamlit-App zum Erstellen, Prüfen und Publizieren von Microsoft
 - Upload-Payload-Preview vor dem Graph-Upload
 - Graph Connect/Disconnect direkt aus der UI
 - Community-Suche in `JayRHa/EndpointAnalyticsRemediationScripts` mit Treffer-Scoring und Direktlinks
-- Modell-Presets für `GPT-5.3-Codex` und `GPT-5.3` (Stand: 5. Februar 2026)
+- Modell-Presets für `GPT-5.3-Codex` und optional `GPT-5.3` (Stand: 5. Februar 2026)
 - Provider-Auswahl: `Azure OpenAI` oder `OpenAI`
 
 ## Tech-Update (Stand: 18. Februar 2026)
@@ -29,7 +29,7 @@ Modernisierte Streamlit-App zum Erstellen, Prüfen und Publizieren von Microsoft
 ## Modell-Stand (verifiziert am 18. Februar 2026)
 
 - Empfohlene Coding-Option: `gpt-5.3-codex`
-- Allgemeine Option: `gpt-5.3`
+- Optionale Alternative: `gpt-5.3` (nur wenn in deinem Provider/Tenant verfügbar)
 - In Azure muss der Name als Deployment existieren (z. B. Deployment-Name `gpt-5.3-codex`).
 
 ## Voraussetzungen
