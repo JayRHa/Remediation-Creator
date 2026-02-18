@@ -7,6 +7,14 @@ from datetime import datetime, timezone
 import streamlit as st
 from azure.identity import InteractiveBrowserCredential
 
+from modules.community_search import (
+    DEFAULT_OWNER,
+    DEFAULT_REF,
+    DEFAULT_REPO,
+    build_project_catalog,
+    fetch_repo_tree,
+    search_projects,
+)
 from modules.prompts import SCENARIO_TEMPLATES
 from modules.utility import Utility, ValidationReport
 
@@ -96,6 +104,10 @@ def _default_state() -> dict[str, object]:
         "graph_auth_header": {},
         "graph_scope": _secret("GRAPH_SCOPE", "https://graph.microsoft.com/.default"),
         "last_validation": None,
+        "github_token": "",
+        "community_query": "",
+        "community_results": [],
+        "community_error": "",
     }
 
 
@@ -192,6 +204,12 @@ def _build_graph_header(token: str) -> dict[str, str]:
     }
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_community_catalog(owner: str, repo: str, ref: str, github_token: str) -> list:
+    tree = fetch_repo_tree(owner=owner, repo=repo, ref=ref, github_token=github_token)
+    return build_project_catalog(tree)
+
+
 _init_state()
 _inject_styles()
 
@@ -257,6 +275,15 @@ with st.sidebar:
     else:
         st.caption("Graph status: Not connected")
 
+    st.subheader("Community Search")
+    st.caption("Searches JayRHa/EndpointAnalyticsRemediationScripts via GitHub API.")
+    st.session_state.github_token = st.text_input(
+        "GitHub token (optional)",
+        value=st.session_state.github_token,
+        type="password",
+        help="Optional: increases API rate limits for search.",
+    )
+
 col_a, col_b = st.columns([0.65, 0.35])
 
 with col_a:
@@ -289,6 +316,61 @@ with col_a:
             height=120,
             placeholder="e.g. keep all actions idempotent, include event log output",
         )
+
+        with st.expander("Find matching scripts from community repository"):
+            st.session_state.community_query = st.text_input(
+                "Search query",
+                value=st.session_state.community_query,
+                placeholder="e.g. bitlocker, teams, dns, browser cache",
+            )
+            c_search, c_use = st.columns([0.3, 0.7])
+            if c_search.button("Search community projects", use_container_width=True):
+                try:
+                    catalog = _load_community_catalog(
+                        owner=DEFAULT_OWNER,
+                        repo=DEFAULT_REPO,
+                        ref=DEFAULT_REF,
+                        github_token=st.session_state.github_token,
+                    )
+                    st.session_state.community_results = search_projects(
+                        query=st.session_state.community_query,
+                        catalog=catalog,
+                        limit=8,
+                    )
+                    st.session_state.community_error = ""
+                except Exception as exc:
+                    st.session_state.community_results = []
+                    st.session_state.community_error = str(exc)
+
+            if st.session_state.community_error:
+                st.error(f"Community search failed: {st.session_state.community_error}")
+
+            if st.session_state.community_results:
+                for item in st.session_state.community_results:
+                    project = item.project
+                    st.markdown(f"**{project.name}**  \nScore: `{item.score}`")
+                    st.markdown(
+                        f"[Open project]({project.folder_url()})  "
+                        f"| Detection scripts: `{len(project.detection_files)}`  "
+                        f"| Remediation scripts: `{len(project.remediation_files)}`"
+                    )
+                    if item.reasons:
+                        st.caption("Reasons: " + ", ".join(item.reasons))
+                    if c_use.button(
+                        f"Use project name in description: {project.name}",
+                        key=f"use_{project.name}",
+                        use_container_width=True,
+                    ):
+                        if st.session_state.description.strip():
+                            st.session_state.description += (
+                                "\n\nReference from community repo: " + project.name
+                            )
+                        else:
+                            st.session_state.description = (
+                                "Reference from community repo: " + project.name
+                            )
+            elif st.session_state.community_query.strip():
+                st.info("No matching community projects found for the current query.")
 
         c_generate, c_clear = st.columns([0.25, 0.2])
 

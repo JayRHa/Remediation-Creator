@@ -15,6 +15,7 @@ Modernisierte Streamlit-App zum Erstellen, Prüfen und Publizieren von Microsoft
 - Download von `detection.ps1`, `remediation.ps1` und `payload.json`
 - Upload-Payload-Preview vor dem Graph-Upload
 - Graph Connect/Disconnect direkt aus der UI
+- Community-Suche in `JayRHa/EndpointAnalyticsRemediationScripts` mit Treffer-Scoring und Direktlinks
 
 ## Tech-Update (Stand: 18. Februar 2026)
 
@@ -64,6 +65,12 @@ oder mit dem Helper:
 3. Skripte generieren.
 4. Im Review-Tab prüfen, validieren und bei Bedarf manuell anpassen.
 5. Im Publish-Tab Payload prüfen und zu Graph hochladen.
+
+## Community-Suche
+
+- Im Tab `Generate` gibt es den Bereich **Find matching scripts from community repository**.
+- Die Suche durchsucht das öffentliche Repo `JayRHa/EndpointAnalyticsRemediationScripts`.
+- Optional kann ein GitHub Token gesetzt werden, um API-Limits zu erhöhen.
 
 ## Sicherheitshinweis
 
