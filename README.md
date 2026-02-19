@@ -23,6 +23,24 @@ Tabs in the app:
 3. `Review`
 4. `Publish`
 
+## UI screenshots
+
+### Find Scripts
+
+![Find Scripts tab](.pictures/find-scripts.png)
+
+### Generate
+
+![Generate tab](.pictures/generate.png)
+
+### Review
+
+![Review tab](.pictures/review.png)
+
+### Publish
+
+![Publish tab](.pictures/publish.png)
+
 ### `Find Scripts`
 
 - Searches `JayRHa/EndpointAnalyticsRemediationScripts` via GitHub API
