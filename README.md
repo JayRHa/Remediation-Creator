@@ -2,7 +2,7 @@
 
 Modern Streamlit app to generate, review, and publish Microsoft Intune Endpoint Analytics detection and remediation scripts.
 
-![Tool UI](https://github.com/JayRHa/Remediation-Creator/blob/main/.pictures/tool.png)
+![Remediation Creator Next](.pictures/generate.png)
 
 ## Why this project
 
