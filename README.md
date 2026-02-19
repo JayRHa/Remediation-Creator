@@ -1,91 +1,182 @@
 # Remediation Creator Next
 
-Modernisierte Streamlit-App zum Erstellen, Prüfen und Publizieren von Microsoft Intune Detection- und Remediation-Skripten mit Azure OpenAI oder OpenAI.
+Modern Streamlit app to generate, review, and publish Microsoft Intune Endpoint Analytics detection and remediation scripts.
 
 ![Tool UI](https://github.com/JayRHa/Remediation-Creator/blob/main/.pictures/tool.png)
 
-## Was ist neu
+## Why this project
 
-- Modernes UI mit klarem Workflow: `Generate` -> `Review` -> `Publish`
-- Sidebar-Control-Center für Modell- und Publish-Settings
-- Szenario-Vorlagen (BitLocker, Disk Cleanup, Time Service, Local Admin Drift)
-- Zusätzliche Requirement-Box für präzisere Script-Vorgaben
-- Script-Validierung mit Checks für Exit-Codes und riskante Detection-Kommandos
-- Snapshot-History inkl. Restore
-- Download von `detection.ps1`, `remediation.ps1` und `payload.json`
-- Upload-Payload-Preview vor dem Graph-Upload
-- Graph Connect/Disconnect direkt aus der UI
-- Community-Suche in `JayRHa/EndpointAnalyticsRemediationScripts` mit Treffer-Scoring und Direktlinks
-- Modell-Presets für `GPT-5.3-Codex` und optional `GPT-5.3` (Stand: 5. Februar 2026)
-- Provider-Auswahl: `Azure OpenAI` oder `OpenAI`
+Creating Intune remediation scripts manually is slow and repetitive.
+This app helps you:
 
-## Tech-Update (Stand: 18. Februar 2026)
+- draft detection and remediation PowerShell scripts with LLM support
+- validate scripts before upload
+- search an existing community script catalog and reuse good patterns
+- publish directly to Intune via Microsoft Graph payload
+
+## Current UI flow
+
+Tabs in the app:
+
+1. `Find Scripts`
+2. `Generate`
+3. `Review`
+4. `Publish`
+
+### `Find Scripts`
+
+- Searches `JayRHa/EndpointAnalyticsRemediationScripts` via GitHub API
+- Shows scored matches (folder + file relevance)
+- `Select` saves a project for review
+
+### `Generate`
+
+- Collapsible **Model & Generation Settings** block:
+  - Provider (`Azure OpenAI` or `OpenAI`)
+  - Preset / custom model
+  - Mode (`Detection only` or `Detection and Remediation`)
+  - Temperature and max tokens
+- Description and optional extra requirements
+- Script generation
+
+### `Review`
+
+- Shows selected community project preview (if selected in `Find Scripts`)
+- `Use selected scripts in editor` to copy community scripts into review editors
+- Built-in validation hints and export as `.ps1`
+
+### `Publish`
+
+- Intune payload preview
+- Graph auth connect/disconnect
+- Upload to device health scripts endpoint
+
+## Key features
+
+- Azure OpenAI and OpenAI provider support
+- GPT-5 model support with automatic Responses API routing
+- Automatic fallback for models that only allow default temperature
+- Community script discovery with selection flow into review
+- Script validation (exit code checks, risky command hints)
+- Download support for `detection.ps1`, `remediation.ps1`, and `payload.json`
+
+## Tech stack
 
 - `streamlit==1.54.0`
 - `azure-identity==1.25.2`
 - `openai==2.21.0`
 - `requests==2.32.5`
 
-## Modell-Stand (verifiziert am 18. Februar 2026)
+## Quick start (recommended)
 
-- Empfohlene Coding-Option: `gpt-5.3-codex`
-- Optionale Alternative: `gpt-5.3` (nur wenn in deinem Provider/Tenant verfügbar)
-- In Azure muss der Name als Deployment existieren (z. B. Deployment-Name `gpt-5.3-codex`).
+Because many macOS Python installs are "externally managed" (PEP 668), use a virtual environment:
 
-## Voraussetzungen
+```bash
+cd /path/to/Remediation-Creator
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
 
-- Python 3.10+
-- Azure OpenAI Resource + Deployment oder OpenAI API Key
-- App Registration mit passenden Graph-Rechten für Device Health Scripts
+Create secrets file:
 
-## Einrichtung
+```bash
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+```
 
-1. Repository klonen.
-2. `.streamlit/secrets.toml.example` nach `.streamlit/secrets.toml` kopieren.
-3. Secrets ausfüllen:
+Run app:
+
+```bash
+python -m streamlit run app.py
+```
+
+Open:
+
+```text
+http://localhost:8501
+```
+
+## Configuration
+
+`Model / deployment` in UI is primary.
+`secrets.toml` values are fallback only.
+
+Example `.streamlit/secrets.toml`:
 
 ```toml
 AZURE_OPENAI_KEY = "..."
-AZURE_OPENAI_ENDPOINT = "https://YOUR-ENDPOINT.openai.azure.com"
-AZURE_OPENAI_CHATGPT_DEPLOYMENT = "gpt-5.3-codex" # Azure deployment name
-AZURE_OPENAI_API_VERSION = "2024-10-21"
-OPENAI_API_KEY = "" # optional for provider OpenAI
-OPENAI_MODEL = "gpt-5.3-codex"
+AZURE_OPENAI_ENDPOINT = "https://YOUR-ENDPOINT.cognitiveservices.azure.com"
+AZURE_OPENAI_CHATGPT_DEPLOYMENT = "gpt-5.2-chat" # fallback
+AZURE_OPENAI_API_VERSION = "2025-04-01-preview"
+
+OPENAI_API_KEY = "" # optional
+OPENAI_MODEL = "gpt-5.2-chat" # fallback
+
 APP_REGISTRATION_ID = "..."
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 ```
 
-## Start
+## Model notes
+
+- For `gpt-5*` models, the app prefers the Responses API automatically.
+- If a model rejects non-default temperature, the app retries without custom temperature.
+- If UI model field is set, it overrides fallback values from TOML.
+
+## Community select workflow
+
+1. Open `Find Scripts`
+2. Search for topic (example: `bitlocker`)
+3. Click `Select` on a result
+4. Open `Review`
+5. Click `Use selected scripts in editor` (optional)
+
+## Security and operations
+
+- Never commit real secrets (`.streamlit/secrets.toml` is gitignored)
+- Rotate keys if exposed
+- Review all generated scripts before production use
+
+## Troubleshooting
+
+### `No module named streamlit`
+
+Use venv and install requirements:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 -m streamlit run app.py
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-oder mit dem Helper:
+### `externally-managed-environment`
 
-```bash
-./run.sh
+Do not install globally with Homebrew Python. Use `.venv`.
+
+### `Unsupported value: temperature`
+
+Handled automatically in current app versions; update to latest code if you still see it.
+
+### `DeploymentNotFound`
+
+Your model/deployment name does not exist on that Azure resource.
+Check your deployment name in Azure and set it in UI `Model / deployment`.
+
+## Project structure
+
+```text
+app.py
+modules/
+  community_search.py
+  prompts.py
+  utility.py
+.streamlit/
+  config.toml
+  secrets.toml.example
+requirements.txt
+run.sh
+run.ps1
 ```
 
-## Typischer Workflow
-
-1. Modus und Parameter im Sidebar-Control-Center setzen.
-2. Beschreibung (ggf. mit Template) erfassen.
-3. Skripte generieren.
-4. Im Review-Tab prüfen, validieren und bei Bedarf manuell anpassen.
-5. Im Publish-Tab Payload prüfen und zu Graph hochladen.
-
-## Community-Suche
-
-- Im Tab `Generate` gibt es den Bereich **Find matching scripts from community repository**.
-- Die Suche durchsucht das öffentliche Repo `JayRHa/EndpointAnalyticsRemediationScripts`.
-- Optional kann ein GitHub Token gesetzt werden, um API-Limits zu erhöhen.
-
-## Sicherheitshinweis
-
-KI-generierte Skripte müssen vor produktivem Einsatz technisch und fachlich geprüft werden.
-
-## Lizenz
+## License
 
 Apache 2.0

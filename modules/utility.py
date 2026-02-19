@@ -247,19 +247,165 @@ class Utility:
         temperature: float,
         max_tokens: int,
     ) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model_name,
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
+        # GPT-5 style chat models are often exposed through the Responses API.
+        if self._prefer_responses_api():
+            try:
+                return self._invoke_with_responses(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception:
+                # Fall back to chat completions for compatibility with classic deployments.
+                pass
+
+        return self._invoke_with_chat_completions(
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
         )
+
+    def _prefer_responses_api(self) -> bool:
+        lower_model = self.model_name.lower()
+        return lower_model.startswith("gpt-5")
+
+    def _invoke_with_responses(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        try:
+            response = self.client.responses.create(
+                model=self.model_name,
+                input=messages,
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+        except Exception as exc:
+            if self._is_temperature_default_only_error(exc):
+                response = self.client.responses.create(
+                    model=self.model_name,
+                    input=messages,
+                    max_output_tokens=max_tokens,
+                )
+            else:
+                raise
+
+        output_text = getattr(response, "output_text", None)
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+
+        extracted = self._extract_text_from_responses_output(getattr(response, "output", None))
+        if extracted:
+            return extracted
+        raise RuntimeError("Responses API returned no text output.")
+
+    def _invoke_with_chat_completions(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                messages=messages,
+            )
+        except Exception as exc:
+            message = str(exc)
+            if "max_tokens" in message and "max_completion_tokens" in message and self._is_temperature_default_only_error(exc):
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    max_completion_tokens=max_tokens,
+                    messages=messages,
+                )
+            elif "max_tokens" in message and "max_completion_tokens" in message:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        temperature=temperature,
+                        max_completion_tokens=max_tokens,
+                        messages=messages,
+                    )
+                except Exception as exc2:
+                    if self._is_temperature_default_only_error(exc2):
+                        response = self.client.chat.completions.create(
+                            model=self.model_name,
+                            max_completion_tokens=max_tokens,
+                            messages=messages,
+                        )
+                    else:
+                        raise
+            elif self._is_temperature_default_only_error(exc):
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        max_tokens=max_tokens,
+                        messages=messages,
+                    )
+                except Exception as exc2:
+                    if "max_tokens" in str(exc2) and "max_completion_tokens" in str(exc2):
+                        response = self.client.chat.completions.create(
+                            model=self.model_name,
+                            max_completion_tokens=max_tokens,
+                            messages=messages,
+                        )
+                    else:
+                        raise
+            else:
+                raise
+
         content = response.choices[0].message.content
-        if content is None:
-            raise RuntimeError("Model returned an empty response.")
-        return content.strip()
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        if isinstance(content, list):
+            chunks: list[str] = []
+            for item in content:
+                text = item.get("text") if isinstance(item, dict) else getattr(item, "text", "")
+                if isinstance(text, str) and text:
+                    chunks.append(text)
+            merged = "".join(chunks).strip()
+            if merged:
+                return merged
+        raise RuntimeError("Model returned an empty response.")
+
+    @staticmethod
+    def _extract_text_from_responses_output(output_items: Any) -> str:
+        if output_items is None:
+            return ""
+        chunks: list[str] = []
+        for item in output_items:
+            item_type = item.get("type") if isinstance(item, dict) else getattr(item, "type", "")
+            if item_type != "message":
+                continue
+            content = item.get("content") if isinstance(item, dict) else getattr(item, "content", [])
+            for block in content:
+                block_type = block.get("type") if isinstance(block, dict) else getattr(block, "type", "")
+                text = block.get("text") if isinstance(block, dict) else getattr(block, "text", "")
+                if block_type == "output_text" and isinstance(text, str):
+                    chunks.append(text)
+        return "".join(chunks).strip()
+
+    @staticmethod
+    def _is_temperature_default_only_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return (
+            "temperature" in text
+            and (
+                "unsupported value" in text
+                or "unsupported parameter" in text
+                or "default (1)" in text
+                or "only the default" in text
+            )
+        )
 
     @staticmethod
     def _build_detection_prompt(description: str, extra_requirements: str) -> str:

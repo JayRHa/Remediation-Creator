@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import urllib.parse
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -12,6 +13,7 @@ from modules.community_search import (
     DEFAULT_REF,
     DEFAULT_REPO,
     build_project_catalog,
+    fetch_text_file,
     fetch_repo_tree,
     search_projects,
 )
@@ -21,6 +23,7 @@ from modules.utility import Utility, ValidationReport
 MODEL_PRESETS: dict[str, str] = {
     "GPT-5.3-Codex (latest coding, 2026-02-05)": "gpt-5.3-codex",
     "GPT-5.3 (optional deployment)": "gpt-5.3",
+    "GPT-5.2-Chat (your Azure test)": "gpt-5.2-chat",
     "Custom": "",
 }
 
@@ -68,6 +71,13 @@ def _inject_styles() -> None:
             border: 1px solid rgba(0, 84, 209, 0.25);
             background: linear-gradient(120deg, #ffffff 0%, #f1f6ff 100%);
             font-weight: 600;
+            color: #0f172a !important;
+        }
+
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(120deg, #0054d1 0%, #0f9b7a 100%) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(0, 84, 209, 0.6) !important;
         }
 
         .stTextArea textarea, .stTextInput input {
@@ -102,11 +112,8 @@ def _default_state() -> dict[str, object]:
         "temperature": 0.2,
         "max_tokens": 1600,
         "llm_provider": "Azure OpenAI",
-        "model_preset": "GPT-5.3-Codex (latest coding, 2026-02-05)",
-        "model_name": _secret(
-            "AZURE_OPENAI_CHATGPT_DEPLOYMENT",
-            _secret("OPENAI_MODEL", "gpt-5.3-codex"),
-        ),
+        "model_preset": "Custom",
+        "model_name": "",
         "openai_api_key": "",
         "run_as_32_bit": True,
         "enforce_signature_check": False,
@@ -121,6 +128,7 @@ def _default_state() -> dict[str, object]:
         "community_query": "",
         "community_results": [],
         "community_error": "",
+        "selected_community_project": None,
     }
 
 
@@ -143,9 +151,16 @@ def _reset_scripts() -> None:
 def _create_utility() -> tuple[Utility | None, list[str]]:
     provider = st.session_state.llm_provider
     model_name = st.session_state.model_name.strip()
+    if not model_name:
+        fallback_key = (
+            "AZURE_OPENAI_CHATGPT_DEPLOYMENT"
+            if provider == "Azure OpenAI"
+            else "OPENAI_MODEL"
+        )
+        model_name = _secret(fallback_key, "").strip()
 
     if not model_name:
-        return None, ["Model/deployment name"]
+        return None, ["Model/deployment name (set in UI)"]
 
     if provider == "Azure OpenAI":
         required = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT"]
@@ -158,7 +173,7 @@ def _create_utility() -> tuple[Utility | None, list[str]]:
             model_name=model_name,
             api_key=st.secrets["AZURE_OPENAI_KEY"],
             azure_openai_endpoint=st.secrets["AZURE_OPENAI_ENDPOINT"],
-            azure_openai_api_version=_secret("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+            azure_openai_api_version=_secret("AZURE_OPENAI_API_VERSION", "2025-04-01-preview"),
             graph_auth_header=st.session_state.graph_auth_header,
         )
         return utility, []
@@ -243,25 +258,69 @@ def _load_community_catalog(owner: str, repo: str, ref: str, github_token: str) 
     return build_project_catalog(tree)
 
 
-_init_state()
-_inject_styles()
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_community_project_preview(
+    project_name: str,
+    project_folder: str,
+    detection_file: str,
+    remediation_file: str,
+    readme_file: str,
+    github_token: str,
+) -> dict[str, str]:
+    detection_script = ""
+    remediation_script = ""
+    readme_content = ""
 
-utility: Utility | None = None
-missing_secrets: list[str] = []
+    try:
+        if detection_file:
+            detection_script = fetch_text_file(
+                path=detection_file,
+                owner=DEFAULT_OWNER,
+                repo=DEFAULT_REPO,
+                ref=DEFAULT_REF,
+                github_token=github_token,
+            )
+    except Exception:
+        detection_script = ""
 
-st.markdown(
-    """
-    <div class="hero">
-      <h2 style="margin:0;">Remediation Creator Next</h2>
-      <p>Generate, review, validate and publish Intune detection/remediation scripts with Azure OpenAI or OpenAI.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+    try:
+        if remediation_file:
+            remediation_script = fetch_text_file(
+                path=remediation_file,
+                owner=DEFAULT_OWNER,
+                repo=DEFAULT_REPO,
+                ref=DEFAULT_REF,
+                github_token=github_token,
+            )
+    except Exception:
+        remediation_script = ""
 
-with st.sidebar:
-    st.header("Control Center")
+    try:
+        if readme_file:
+            readme_content = fetch_text_file(
+                path=readme_file,
+                owner=DEFAULT_OWNER,
+                repo=DEFAULT_REPO,
+                ref=DEFAULT_REF,
+                github_token=github_token,
+            )
+    except Exception:
+        readme_content = ""
 
+    return {
+        "name": project_name,
+        "folder": project_folder,
+        "folder_url": f"https://github.com/{DEFAULT_OWNER}/{DEFAULT_REPO}/tree/{DEFAULT_REF}/{urllib.parse.quote(project_folder, safe='/')}",
+        "detection_file": detection_file,
+        "remediation_file": remediation_file,
+        "readme_file": readme_file,
+        "detection_script": detection_script,
+        "remediation_script": remediation_script,
+        "readme_content": readme_content,
+    }
+
+
+def _render_model_controls() -> None:
     st.subheader("Model")
     st.session_state.llm_provider = st.selectbox(
         "Provider",
@@ -269,15 +328,28 @@ with st.sidebar:
         index=0 if st.session_state.llm_provider == "Azure OpenAI" else 1,
     )
     preset_labels = list(MODEL_PRESETS.keys())
-    preset_index = preset_labels.index(st.session_state.model_preset) if st.session_state.model_preset in preset_labels else 0
+    preset_index = (
+        preset_labels.index(st.session_state.model_preset)
+        if st.session_state.model_preset in preset_labels
+        else 0
+    )
     st.session_state.model_preset = st.selectbox("Preset", options=preset_labels, index=preset_index)
     if st.session_state.model_preset != "Custom":
         st.session_state.model_name = MODEL_PRESETS[st.session_state.model_preset]
-    st.session_state.model_name = st.text_input(
+    elif not st.session_state.model_name.strip():
+        seed_key = (
+            "AZURE_OPENAI_CHATGPT_DEPLOYMENT"
+            if st.session_state.llm_provider == "Azure OpenAI"
+            else "OPENAI_MODEL"
+        )
+        st.session_state.model_name = _secret(seed_key, "")
+
+    st.text_input(
         "Model / deployment",
-        value=st.session_state.model_name,
-        help="Azure: deployment name. OpenAI: model id (e.g. gpt-5.3-codex).",
+        key="model_name",
+        help="Azure: deployment name. OpenAI: model id. UI value overrides secrets.",
     )
+
     if st.session_state.llm_provider == "OpenAI":
         st.session_state.openai_api_key = st.text_input(
             "OpenAI API key (optional if set in secrets)",
@@ -285,32 +357,37 @@ with st.sidebar:
             type="password",
         )
 
-    utility, missing_secrets = _create_utility()
-    if missing_secrets:
-        st.error("Missing configuration: " + ", ".join(missing_secrets))
 
+def _render_generation_controls() -> None:
     st.subheader("Generation")
     st.session_state.mode = st.radio(
         "Mode",
         options=["Detection only", "Detection and Remediation"],
         index=1 if st.session_state.mode == "Detection and Remediation" else 0,
     )
-    st.session_state.temperature = st.slider("Temperature", 0.0, 1.0, float(st.session_state.temperature), 0.05)
-    st.session_state.max_tokens = st.slider("Max tokens", 400, 4000, int(st.session_state.max_tokens), 100)
-
-    st.subheader("Publish")
-    st.session_state.scope = st.selectbox("Run as", options=["System", "User"], index=0 if st.session_state.scope == "System" else 1)
-    st.session_state.run_as_32_bit = st.toggle("Run as 32-bit", value=bool(st.session_state.run_as_32_bit))
-    st.session_state.enforce_signature_check = st.toggle(
-        "Enforce signature check", value=bool(st.session_state.enforce_signature_check)
+    st.session_state.temperature = st.slider(
+        "Temperature",
+        0.0,
+        1.0,
+        float(st.session_state.temperature),
+        0.05,
+    )
+    st.session_state.max_tokens = st.slider(
+        "Max tokens",
+        400,
+        4000,
+        int(st.session_state.max_tokens),
+        100,
     )
 
+
+def _render_graph_login_controls() -> None:
     st.subheader("Graph Login")
     st.session_state.graph_scope = st.text_input("Scope", value=st.session_state.graph_scope)
     app_registration_id = _secret("APP_REGISTRATION_ID")
 
     c1, c2 = st.columns(2)
-    if c1.button("Connect", use_container_width=True):
+    if c1.button("Connect", use_container_width=True, key="publish_graph_connect"):
         if not app_registration_id:
             st.error("APP_REGISTRATION_ID is missing in secrets.")
         else:
@@ -322,7 +399,7 @@ with st.sidebar:
             except Exception as exc:
                 st.error(f"Graph authentication failed: {exc}")
 
-    if c2.button("Disconnect", use_container_width=True):
+    if c2.button("Disconnect", use_container_width=True, key="publish_graph_disconnect"):
         st.session_state.graph_auth_header = {}
         st.info("Graph token removed.")
 
@@ -331,21 +408,33 @@ with st.sidebar:
     else:
         st.caption("Graph status: Not connected")
 
-    st.subheader("Community Search")
-    st.caption("Searches JayRHa/EndpointAnalyticsRemediationScripts via GitHub API.")
-    st.session_state.github_token = st.text_input(
-        "GitHub token (optional)",
-        value=st.session_state.github_token,
-        type="password",
-        help="Optional: increases API rate limits for search.",
-    )
+
+_init_state()
+_inject_styles()
+
+st.markdown(
+    """
+    <div class="hero">
+      <h2 style="margin:0;">Remediation Creator Next</h2>
+      <p>Generate, review, validate and publish Intune detection/remediation scripts with Azure OpenAI or OpenAI.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 col_a, col_b = st.columns([0.65, 0.35])
 
 with col_a:
-    tabs = st.tabs(["Generate", "Review", "Publish"])
+    tab_community, tab_generate, tab_review, tab_publish = st.tabs(
+        ["Find Scripts", "Generate", "Review", "Publish"]
+    )
 
-    with tabs[0]:
+    with tab_generate:
+        with st.expander("Model & Generation Settings", expanded=False):
+            _render_model_controls()
+            _render_generation_controls()
+        st.divider()
+
         st.subheader("Describe your remediation scenario")
 
         template_names = [item["name"] for item in SCENARIO_TEMPLATES]
@@ -373,66 +462,12 @@ with col_a:
             placeholder="e.g. keep all actions idempotent, include event log output",
         )
 
-        with st.expander("Find matching scripts from community repository"):
-            st.session_state.community_query = st.text_input(
-                "Search query",
-                value=st.session_state.community_query,
-                placeholder="e.g. bitlocker, teams, dns, browser cache",
-            )
-            c_search, c_use = st.columns([0.3, 0.7])
-            if c_search.button("Search community projects", use_container_width=True):
-                try:
-                    catalog = _load_community_catalog(
-                        owner=DEFAULT_OWNER,
-                        repo=DEFAULT_REPO,
-                        ref=DEFAULT_REF,
-                        github_token=st.session_state.github_token,
-                    )
-                    st.session_state.community_results = search_projects(
-                        query=st.session_state.community_query,
-                        catalog=catalog,
-                        limit=8,
-                    )
-                    st.session_state.community_error = ""
-                except Exception as exc:
-                    st.session_state.community_results = []
-                    st.session_state.community_error = str(exc)
-
-            if st.session_state.community_error:
-                st.error(f"Community search failed: {st.session_state.community_error}")
-
-            if st.session_state.community_results:
-                for item in st.session_state.community_results:
-                    project = item.project
-                    st.markdown(f"**{project.name}**  \nScore: `{item.score}`")
-                    st.markdown(
-                        f"[Open project]({project.folder_url()})  "
-                        f"| Detection scripts: `{len(project.detection_files)}`  "
-                        f"| Remediation scripts: `{len(project.remediation_files)}`"
-                    )
-                    if item.reasons:
-                        st.caption("Reasons: " + ", ".join(item.reasons))
-                    if c_use.button(
-                        f"Use project name in description: {project.name}",
-                        key=f"use_{project.name}",
-                        use_container_width=True,
-                    ):
-                        if st.session_state.description.strip():
-                            st.session_state.description += (
-                                "\n\nReference from community repo: " + project.name
-                            )
-                        else:
-                            st.session_state.description = (
-                                "Reference from community repo: " + project.name
-                            )
-            elif st.session_state.community_query.strip():
-                st.info("No matching community projects found for the current query.")
-
         c_generate, c_clear = st.columns([0.25, 0.2])
 
         if c_generate.button("Generate scripts", use_container_width=True, type="primary"):
+            utility, missing_config = _create_utility()
             if utility is None:
-                st.error("LLM configuration missing. Check sidebar settings and secrets.")
+                st.error("LLM configuration missing: " + ", ".join(missing_config) + ". Configure it in Generate.")
             elif not st.session_state.description.strip():
                 st.error("Please enter a description first.")
             else:
@@ -460,8 +495,124 @@ with col_a:
         if c_clear.button("Clear", use_container_width=True):
             _reset_scripts()
 
-    with tabs[1]:
+    with tab_community:
+        st.subheader("Find matching scripts from community repository")
+        st.caption("Searches JayRHa/EndpointAnalyticsRemediationScripts via GitHub API.")
+
+        selected_project = st.session_state.selected_community_project
+        if isinstance(selected_project, dict) and selected_project.get("name"):
+            st.info(f"Selected: {selected_project['name']} (shown in Review tab)")
+
+        st.session_state.github_token = st.text_input(
+            "GitHub token (optional)",
+            value=st.session_state.github_token,
+            type="password",
+            help="Optional: increases API rate limits for search.",
+        )
+        st.session_state.community_query = st.text_input(
+            "Search query",
+            value=st.session_state.community_query,
+            placeholder="e.g. bitlocker, teams, dns, browser cache",
+        )
+
+        c_search, c_reset = st.columns([0.35, 0.2])
+        if c_search.button("Search community projects", use_container_width=True):
+            try:
+                catalog = _load_community_catalog(
+                    owner=DEFAULT_OWNER,
+                    repo=DEFAULT_REPO,
+                    ref=DEFAULT_REF,
+                    github_token=st.session_state.github_token,
+                )
+                st.session_state.community_results = search_projects(
+                    query=st.session_state.community_query,
+                    catalog=catalog,
+                    limit=8,
+                )
+                st.session_state.community_error = ""
+            except Exception as exc:
+                st.session_state.community_results = []
+                st.session_state.community_error = str(exc)
+
+        if c_reset.button("Clear results", use_container_width=True):
+            st.session_state.community_results = []
+            st.session_state.community_error = ""
+            st.session_state.community_query = ""
+
+        if st.session_state.community_error:
+            st.error(f"Community search failed: {st.session_state.community_error}")
+
+        if st.session_state.community_results:
+            for item in st.session_state.community_results:
+                project = item.project
+                st.markdown(f"**{project.name}**  \nScore: `{item.score}`")
+                st.markdown(
+                    f"[Open project]({project.folder_url()})  "
+                    f"| Detection scripts: `{len(project.detection_files)}`  "
+                    f"| Remediation scripts: `{len(project.remediation_files)}`"
+                )
+                if item.reasons:
+                    st.caption("Reasons: " + ", ".join(item.reasons))
+                select_key = hashlib.sha1(project.name.encode("utf-8")).hexdigest()[:8]
+                if st.button(f"Select: {project.name}", key=f"community_select_{select_key}", use_container_width=True):
+                    detection_file = project.detection_files[0] if project.detection_files else ""
+                    remediation_file = project.remediation_files[0] if project.remediation_files else ""
+                    st.session_state.selected_community_project = _load_community_project_preview(
+                        project_name=project.name,
+                        project_folder=project.folder,
+                        detection_file=detection_file,
+                        remediation_file=remediation_file,
+                        readme_file=project.readme_file,
+                        github_token=st.session_state.github_token,
+                    )
+                    st.success(f"Selected '{project.name}'. Open Review tab.")
+        elif st.session_state.community_query.strip():
+            st.info("No matching community projects found for the current query.")
+
+    with tab_review:
         st.subheader("Review and validate")
+
+        selected_project = st.session_state.selected_community_project
+        if isinstance(selected_project, dict) and selected_project.get("name"):
+            st.markdown(f"**Selected Community Project:** {selected_project['name']}")
+            st.markdown(f"[Open project]({selected_project.get('folder_url', '')})")
+
+            preview_col1, preview_col2 = st.columns(2)
+            preview_col1.caption("Community Detection")
+            preview_col1.text_area(
+                "Community detection preview",
+                value=selected_project.get("detection_script", ""),
+                height=180,
+                key="community_detection_preview",
+                disabled=True,
+            )
+            preview_col2.caption("Community Remediation")
+            preview_col2.text_area(
+                "Community remediation preview",
+                value=selected_project.get("remediation_script", ""),
+                height=180,
+                key="community_remediation_preview",
+                disabled=True,
+            )
+
+            c_apply, c_reference = st.columns(2)
+            if c_apply.button("Use selected scripts in editor", use_container_width=True):
+                if selected_project.get("detection_script", "").strip():
+                    st.session_state.detection_script = selected_project["detection_script"]
+                if selected_project.get("remediation_script", "").strip():
+                    st.session_state.remediation_script = selected_project["remediation_script"]
+                st.success("Community scripts copied into Review editor.")
+
+            if c_reference.button("Add selected project to description", use_container_width=True):
+                ref_line = "Reference from community repo: " + selected_project["name"]
+                if ref_line not in st.session_state.description:
+                    if st.session_state.description.strip():
+                        st.session_state.description += "\n\n" + ref_line
+                    else:
+                        st.session_state.description = ref_line
+                st.success("Reference added to description.")
+
+            st.divider()
 
         st.session_state.detection_script = st.text_area(
             "Detection script",
@@ -479,8 +630,9 @@ with col_a:
 
         c_validate, c_save = st.columns(2)
         if c_validate.button("Run validation", use_container_width=True):
+            utility, missing_config = _create_utility()
             if utility is None:
-                st.error("LLM configuration missing. Check sidebar settings and secrets.")
+                st.error("LLM configuration missing: " + ", ".join(missing_config) + ". Configure it in Generate.")
             else:
                 st.session_state.last_validation = utility.validate_scripts(
                     detection_script=st.session_state.detection_script,
@@ -511,8 +663,32 @@ with col_a:
             use_container_width=True,
         )
 
-    with tabs[2]:
+    with tab_publish:
         st.subheader("Publish to Intune")
+
+        utility, missing_config = _create_utility()
+        if utility is None:
+            st.warning("LLM configuration missing: " + ", ".join(missing_config) + ". Configure it in Generate.")
+
+        st.divider()
+        st.subheader("Execution")
+        st.session_state.scope = st.selectbox(
+            "Run as",
+            options=["System", "User"],
+            index=0 if st.session_state.scope == "System" else 1,
+        )
+        st.session_state.run_as_32_bit = st.toggle(
+            "Run as 32-bit",
+            value=bool(st.session_state.run_as_32_bit),
+        )
+        st.session_state.enforce_signature_check = st.toggle(
+            "Enforce signature check",
+            value=bool(st.session_state.enforce_signature_check),
+        )
+
+        _render_graph_login_controls()
+
+        st.divider()
 
         st.session_state.script_name = st.text_input("Script name", value=st.session_state.script_name)
         st.session_state.publisher = st.text_input("Publisher", value=st.session_state.publisher)
@@ -545,9 +721,9 @@ with col_a:
 
             if st.button("Upload to Graph", type="primary", use_container_width=True):
                 if utility is None:
-                    st.error("LLM configuration missing. Check sidebar settings and secrets.")
+                    st.error("LLM configuration missing: " + ", ".join(missing_config))
                 elif "Authorization" not in st.session_state.graph_auth_header:
-                    st.error("Authenticate to Graph in the sidebar first.")
+                    st.error("Authenticate to Graph in the Publish tab first.")
                 else:
                     try:
                         result = utility.upload_payload(payload)

@@ -177,3 +177,38 @@ def _dedupe(items: list[str]) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+def project_file_url(
+    path: str,
+    owner: str = DEFAULT_OWNER,
+    repo: str = DEFAULT_REPO,
+    ref: str = DEFAULT_REF,
+) -> str:
+    """Build a GitHub file URL for a repository path."""
+    encoded = urllib.parse.quote(path, safe="/")
+    return f"https://github.com/{owner}/{repo}/blob/{ref}/{encoded}"
+
+
+def fetch_text_file(
+    path: str,
+    owner: str = DEFAULT_OWNER,
+    repo: str = DEFAULT_REPO,
+    ref: str = DEFAULT_REF,
+    github_token: str = "",
+) -> str:
+    """Fetch text content from a file path in a GitHub repository."""
+    encoded_path = urllib.parse.quote(path, safe="/")
+    encoded_ref = urllib.parse.quote(ref, safe="")
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{encoded_path}?ref={encoded_ref}"
+    headers = {
+        "Accept": "application/vnd.github.raw",
+        "User-Agent": "remediation-creator-next",
+    }
+    if github_token.strip():
+        headers["Authorization"] = f"Bearer {github_token.strip()}"
+
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+    if response.status_code >= 400:
+        raise RuntimeError(f"GitHub file fetch error ({response.status_code}): {response.text[:300]}")
+    return response.text
