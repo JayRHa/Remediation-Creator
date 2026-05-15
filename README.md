@@ -20,7 +20,7 @@ Create. Package. Remediate.
 
 ## What is this?
 
-This repository provides tool for creating and managing Microsoft Intune Proactive Remediation script packages.
+Tool for creating and managing Microsoft Intune Proactive Remediation script packages.
 
 > Browse the documentation below for setup notes, usage details, and project-specific context.
 
@@ -134,7 +134,7 @@ Tabs in the app:
 Because many macOS Python installs are "externally managed" (PEP 668), use a virtual environment:
 
 ```bash
-cd /path/to/Remediation-Creator
+cd /path/to/RemediationCreator
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
