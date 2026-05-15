@@ -12,7 +12,7 @@ Create. Package. Remediate.
 [![GitHub issues](https://img.shields.io/github/issues/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=d73a4a)](https://github.com/JayRHa/RemediationCreator/issues)
 [![Contributors](https://img.shields.io/github/contributors/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=28a745)](https://github.com/JayRHa/RemediationCreator/graphs/contributors)
 
-![Remediation Creator Next](.pictures/generate.png)
+![Remediation Creator Next](assets/generate.png)
 
 <p>
   <a href="https://jannikreinhard.com/">Blog</a> ·
@@ -76,19 +76,19 @@ Tabs in the app:
 
 ### Find Scripts
 
-![Find Scripts tab](.pictures/find-scripts.png)
+![Find Scripts tab](assets/find-scripts.png)
 
 ### Generate
 
-![Generate tab](.pictures/generate.png)
+![Generate tab](assets/generate.png)
 
 ### Review
 
-![Review tab](.pictures/review.png)
+![Review tab](assets/review.png)
 
 ### Publish
 
-![Publish tab](.pictures/publish.png)
+![Publish tab](assets/publish.png)
 
 ### `Find Scripts`
 
