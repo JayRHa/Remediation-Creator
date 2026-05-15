@@ -1,18 +1,3 @@
-<!-- repo-standard:start -->
-# Intune Remediation Creator
-
-Tool for creating and managing Microsoft Intune Proactive Remediation script packages.
-
-| Area | Stack | Visibility |
-| --- | --- | --- |
-| Endpoint Management | Python, PowerShell | Public |
-
-**Repository:** `JayRHa/intune-remediation-creator`  
-**Topics:** `microsoft-intune`, `proactive-remediations`, `powershell`, `python`, `endpoint-management`
-<!-- repo-standard:end -->
-
----
-
 # Remediation Creator Next
 
 Modern Streamlit app to generate, review, and publish Microsoft Intune Endpoint Analytics detection and remediation scripts.
