@@ -1,9 +1,9 @@
 <!-- unified-readme:start -->
 <div align="center">
 
-# Remediation Creator
+# Remediation Creator Next
 
-**Tool for creating and managing Microsoft Intune Proactive Remediation script packages.**
+**Modern Streamlit app to generate, review, and publish Microsoft Intune Endpoint Analytics detection and remediation scripts.**
 
 Create. Package. Remediate.
 
@@ -11,6 +11,8 @@ Create. Package. Remediate.
 [![GitHub forks](https://img.shields.io/github/forks/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=4078c0)](https://github.com/JayRHa/RemediationCreator/network/members)
 [![GitHub issues](https://img.shields.io/github/issues/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=d73a4a)](https://github.com/JayRHa/RemediationCreator/issues)
 [![Contributors](https://img.shields.io/github/contributors/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=28a745)](https://github.com/JayRHa/RemediationCreator/graphs/contributors)
+
+![Remediation Creator Next](.pictures/generate.png)
 
 ---
 
@@ -20,7 +22,7 @@ Create. Package. Remediate.
 
 ## What is this?
 
-Remediation Creator supports Microsoft Intune and endpoint management workflows such as automation, troubleshooting, remediation, deployment, or reporting.
+Remediation Creator Next supports Microsoft Intune and endpoint management workflows such as automation, troubleshooting, remediation, deployment, or reporting.
 
 ## Project Context
 
@@ -42,30 +44,8 @@ flowchart LR
     Review --> Repo
 ```
 
-## Quick Start
-
-1. Review the project context and workflow below.
-2. Clone the repository:
-
-   ```bash
-   git clone https://github.com/JayRHa/RemediationCreator.git
-   ```
-
-3. Continue with the project-specific documentation in the next section.
-
 ---
 <!-- unified-readme:end -->
-
-<!-- project-documentation:start -->
-## Project Documentation
-
-The sections below contain the repository-specific setup, usage, and reference material for this project.
-
-# Remediation Creator Next
-
-Modern Streamlit app to generate, review, and publish Microsoft Intune Endpoint Analytics detection and remediation scripts.
-
-![Remediation Creator Next](.pictures/generate.png)
 
 ## Why this project
 
