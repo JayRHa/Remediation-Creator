@@ -14,6 +14,12 @@ Create. Package. Remediate.
 
 ![Remediation Creator Next](.pictures/generate.png)
 
+<p>
+  <a href="https://jannikreinhard.com/">Blog</a> ·
+  <a href="https://www.linkedin.com/in/jannik-r/">LinkedIn</a> ·
+  <a href="https://x.com/jannik_reinhard">X</a>
+</p>
+
 ---
 
 `Endpoint Management` | `Python` | `Public` | `Maintained`
