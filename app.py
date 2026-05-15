@@ -200,7 +200,7 @@ def _save_history(mode: str) -> None:
         return
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
-    key = hashlib.sha1(
+    key = hashlib.sha256(
         (st.session_state.detection_script + "\n--\n" + st.session_state.remediation_script).encode(
             "utf-8"
         )
@@ -553,7 +553,7 @@ with col_a:
                 )
                 if item.reasons:
                     st.caption("Reasons: " + ", ".join(item.reasons))
-                select_key = hashlib.sha1(project.name.encode("utf-8")).hexdigest()[:8]
+                select_key = hashlib.sha256(project.name.encode("utf-8")).hexdigest()[:8]
                 if st.button(f"Select: {project.name}", key=f"community_select_{select_key}", use_container_width=True):
                     detection_file = project.detection_files[0] if project.detection_files else ""
                     remediation_file = project.remediation_files[0] if project.remediation_files else ""
