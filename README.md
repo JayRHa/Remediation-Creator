@@ -1,3 +1,48 @@
+<!-- unified-readme:start -->
+    <div align="center">
+
+    # Remediation Creator
+
+    **Tool for creating and managing Microsoft Intune Proactive Remediation script packages.**
+
+    Create. Package. Remediate.
+
+    [![GitHub stars](https://img.shields.io/github/stars/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=f4c542)](https://github.com/JayRHa/RemediationCreator/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=4078c0)](https://github.com/JayRHa/RemediationCreator/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=d73a4a)](https://github.com/JayRHa/RemediationCreator/issues)
+[![Contributors](https://img.shields.io/github/contributors/JayRHa/RemediationCreator?style=for-the-badge&logo=github&color=28a745)](https://github.com/JayRHa/RemediationCreator/graphs/contributors)
+
+    ---
+
+    `Endpoint Management` | `Python` | `Public` | `Maintained`
+
+    </div>
+
+    ## What is this?
+
+    This repository contains tool for creating and managing Microsoft Intune Proactive Remediation script packages.
+
+    > Browse the documentation below for setup notes, usage details, and project-specific context.
+
+    ---
+
+    ## Quick Start
+
+    1. Review the project documentation below.
+2. Clone the repository:
+
+   ```bash
+   git clone https://github.com/JayRHa/RemediationCreator.git
+   ```
+
+3. Follow the setup, deployment, or usage notes in the preserved documentation section.
+
+    ---
+    <!-- unified-readme:end -->
+
+
+## Existing Documentation
+
 # Remediation Creator Next
 
 Modern Streamlit app to generate, review, and publish Microsoft Intune Endpoint Analytics detection and remediation scripts.
